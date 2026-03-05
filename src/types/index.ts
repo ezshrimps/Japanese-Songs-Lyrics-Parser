@@ -2,6 +2,7 @@ export interface SavedLyric {
   id: string;
   title: string;
   content: string;
+  parsedResult?: ParsedResult[];
   pinned: boolean;
   savedAt: number;
 }

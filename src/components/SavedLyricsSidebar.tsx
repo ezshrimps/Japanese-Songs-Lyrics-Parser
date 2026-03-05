@@ -63,8 +63,9 @@ function SidebarItem({
     <div
       className="group relative mx-2 mb-0.5"
       style={{
-        borderRadius: 10,
-        background: item.pinned ? "rgba(232,99,74,0.07)" : "transparent",
+        borderRadius: 8,
+        background: item.pinned ? "rgba(232,93,74,0.06)" : "transparent",
+        borderLeft: item.pinned ? "2px solid #e85d4a" : "2px solid transparent",
       }}
     >
       {editing ? (
@@ -81,28 +82,31 @@ function SidebarItem({
             className="flex-1 min-w-0 text-sm bg-transparent outline-none"
             style={{
               color: "rgba(255,255,255,0.9)",
-              borderBottom: "1.5px solid rgba(56,188,212,0.6)",
+              borderBottom: "1.5px solid rgba(56,188,212,0.5)",
               paddingBottom: 2,
             }}
           />
         </div>
       ) : (
         <div
-          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer rounded-[10px] transition-colors duration-150"
+          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer rounded-lg transition-colors duration-150"
           onClick={onLoad}
-          style={{ color: "rgba(255,255,255,0.62)" }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = item.pinned ? "rgba(232,99,74,0.07)" : "transparent"; }}
+          style={{ color: "#ccc" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#1e1e1e"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
         >
           {/* pin dot */}
           {item.pinned && (
-            <span style={{ color: "#E8634A", flexShrink: 0 }}>
+            <span style={{ color: "#e85d4a", flexShrink: 0 }}>
               <IconPin active />
             </span>
           )}
 
           {/* title */}
-          <span className="flex-1 min-w-0 text-sm truncate" style={{ color: item.pinned ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.58)" }}>
+          <span
+            className="flex-1 min-w-0 text-[13px] truncate"
+            style={{ color: item.pinned ? "rgba(255,255,255,0.82)" : "#aaa" }}
+          >
             {item.title}
           </span>
 
@@ -111,9 +115,9 @@ function SidebarItem({
             <button
               title={item.pinned ? "取消置顶" : "置顶"}
               onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ color: item.pinned ? "#E8634A" : "rgba(255,255,255,0.35)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.1)"; }}
+              className="p-1 rounded transition-colors"
+              style={{ color: item.pinned ? "#e85d4a" : "rgba(255,255,255,0.3)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
               <IconPin active={item.pinned} />
@@ -121,9 +125,9 @@ function SidebarItem({
             <button
               title="重命名"
               onClick={(e) => { e.stopPropagation(); setDraft(item.title); setEditing(true); }}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.1)"; }}
+              className="p-1 rounded transition-colors"
+              style={{ color: "rgba(255,255,255,0.3)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
               <IconEdit />
@@ -131,9 +135,9 @@ function SidebarItem({
             <button
               title="删除"
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ color: "rgba(232,99,74,0.65)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(232,99,74,0.12)"; }}
+              className="p-1 rounded transition-colors"
+              style={{ color: "rgba(232,93,74,0.6)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(232,93,74,0.1)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
               <IconTrash />
@@ -149,7 +153,7 @@ function SidebarItem({
 
 interface Props {
   saved: SavedLyric[];
-  onLoad: (content: string) => void;
+  onLoad: (item: SavedLyric) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string) => void;
@@ -161,29 +165,28 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
 
   return (
     <aside
-      className="w-60 flex-shrink-0 flex flex-col overflow-hidden"
+      className="flex flex-col h-full"
       style={{
-        background: "rgba(4,14,17,0.72)",
-        backdropFilter: "blur(24px)",
-        borderRight: "1px solid rgba(255,255,255,0.07)",
+        background: "#111111",
+        borderRight: "1px solid #2e2e2e",
       }}
     >
       {/* Header */}
       <div
-        className="px-5 py-5 flex-shrink-0"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+        className="px-5 py-4 flex-shrink-0"
+        style={{ borderBottom: "1px solid #2a2a2a" }}
       >
         <div className="flex items-center justify-between">
           <h2
-            className="text-xs font-bold tracking-[0.18em] uppercase"
-            style={{ color: "#38BCD4" }}
+            className="text-[11px] font-bold tracking-[0.18em] uppercase"
+            style={{ color: "#555" }}
           >
-            已保存歌词
+            已保存
           </h2>
           {saved.length > 0 && (
             <span
-              className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
-              style={{ background: "rgba(56,188,212,0.12)", color: "#38BCD4" }}
+              className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: "rgba(56,188,212,0.1)", color: "#38BCD4" }}
             >
               {saved.length}
             </span>
@@ -195,13 +198,11 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
       <div className="flex-1 overflow-y-auto py-2">
         {saved.length === 0 ? (
           <div className="px-5 py-8 text-center">
-            <div className="text-3xl mb-3 opacity-20">🎵</div>
-            <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.22)" }}>
+            <div className="text-2xl mb-3 opacity-10">♪</div>
+            <p className="text-[11px] leading-relaxed" style={{ color: "#333" }}>
               暂无保存的歌词
               <br />
-              解析后点击「保存歌词」
-              <br />
-              即可收藏
+              点击「保存」收藏
             </p>
           </div>
         ) : (
@@ -209,8 +210,8 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
             {pinned.length > 0 && (
               <>
                 <p
-                  className="px-5 pt-1.5 pb-1 text-[10px] font-bold tracking-[0.18em] uppercase"
-                  style={{ color: "rgba(232,99,74,0.5)" }}
+                  className="px-5 pt-1.5 pb-1 text-[9px] font-bold tracking-[0.18em] uppercase"
+                  style={{ color: "rgba(232,93,74,0.4)" }}
                 >
                   置顶
                 </p>
@@ -218,7 +219,7 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
                   <SidebarItem
                     key={item.id}
                     item={item}
-                    onLoad={() => onLoad(item.content)}
+                    onLoad={() => onLoad(item)}
                     onDelete={() => onDelete(item.id)}
                     onTogglePin={() => onTogglePin(item.id)}
                     onRename={(t) => onRename(item.id, t)}
@@ -227,7 +228,7 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
                 {unpinned.length > 0 && (
                   <div
                     className="mx-5 my-2"
-                    style={{ height: 1, background: "rgba(255,255,255,0.07)" }}
+                    style={{ height: 1, background: "#222" }}
                   />
                 )}
               </>
@@ -236,7 +237,7 @@ export default function SavedLyricsSidebar({ saved, onLoad, onDelete, onRename, 
               <SidebarItem
                 key={item.id}
                 item={item}
-                onLoad={() => onLoad(item.content)}
+                onLoad={() => onLoad(item)}
                 onDelete={() => onDelete(item.id)}
                 onTogglePin={() => onTogglePin(item.id)}
                 onRename={(t) => onRename(item.id, t)}

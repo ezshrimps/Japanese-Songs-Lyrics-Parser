@@ -15,20 +15,27 @@ export default function LyricLineCard({
 
   return (
     <div
-      className="animate-fade-up rounded-2xl overflow-hidden"
+      className="animate-fade-up rounded-xl overflow-hidden relative"
       style={{
         animationDelay: `${index * 55}ms`,
-        background: "#ffffff",
-        boxShadow:
-          "0 4px 24px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06)",
+        background: "#1a1a1a",
+        border: "1px solid #2e2e2e",
       }}
     >
+      {/* Line number badge */}
+      <div
+        className="absolute top-3 left-3 font-mono text-[10px]"
+        style={{ color: "#333" }}
+      >
+        {String(index + 1).padStart(2, "0")}
+      </div>
+
       {/* ── Lyric body ─────────────────────────────────────────────────── */}
       <div className="px-8 pt-10 pb-8 text-center">
         {/* Ruby text */}
         <div
           className="font-black leading-loose mb-4 flex flex-wrap justify-center"
-          style={{ fontSize: "clamp(1.6rem, 4.5vw, 2.8rem)", color: "#E8634A" }}
+          style={{ fontSize: "clamp(1.5rem, 4vw, 2.4rem)", color: "#f0f0f0" }}
         >
           {line.segments.map((seg, i) =>
             seg.hiragana ? (
@@ -44,31 +51,21 @@ export default function LyricLineCard({
 
         {/* Romaji */}
         <p
-          className="italic tracking-wider mb-6"
-          style={{
-            fontSize: "clamp(0.78rem, 1.8vw, 1rem)",
-            color: "#2A8FA0",
-            letterSpacing: "0.06em",
-          }}
+          className="italic mb-5"
+          style={{ fontSize: "13px", color: "#888", letterSpacing: "0.04em" }}
         >
           {line.fullRomaji}
         </p>
 
-        {/* Translation */}
+        {/* Translation — blue pill */}
         <div
-          className="inline-block rounded-2xl px-8 py-3"
+          className="inline-block rounded-full px-5 py-1.5"
           style={{
-            background: "linear-gradient(135deg, #edfbff, #e6f7fa)",
-            border: "1.5px solid rgba(56,188,212,0.25)",
+            background: "rgba(74,158,255,0.1)",
+            border: "1px solid rgba(74,158,255,0.18)",
           }}
         >
-          <p
-            className="font-bold"
-            style={{
-              fontSize: "clamp(0.9rem, 2.2vw, 1.15rem)",
-              color: "#1B7F94",
-            }}
-          >
+          <p className="text-sm font-medium" style={{ color: "#4a9eff" }}>
             {line.chineseTranslation}
           </p>
         </div>
@@ -77,22 +74,22 @@ export default function LyricLineCard({
       {/* ── Grammar toggle ──────────────────────────────────────────────── */}
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-8 py-3 transition-colors duration-200"
-        style={{
-          borderTop: "1px solid rgba(0,0,0,0.06)",
-          background: expanded
-            ? "rgba(232,99,74,0.03)"
-            : "rgba(56,188,212,0.03)",
+        className="w-full flex items-center justify-between px-5 py-2.5 transition-colors duration-150"
+        style={{ borderTop: "1px solid #2a2a2a", background: "transparent" }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "#222";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "transparent";
         }}
       >
         <span
-          className="flex items-center gap-2 text-sm font-semibold"
-          style={{ color: expanded ? "#C95A3E" : "#2A8FA0" }}
+          className="flex items-center gap-2 text-xs font-medium"
+          style={{ color: "#555" }}
         >
-          {/* Chevron — rotates smoothly */}
           <svg
-            width="16"
-            height="16"
+            width="12"
+            height="12"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -105,12 +102,11 @@ export default function LyricLineCard({
           语法解析
         </span>
         <span
-          className="text-xs font-medium px-2 py-0.5 rounded-full"
+          className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
           style={{
-            background: expanded
-              ? "rgba(232,99,74,0.1)"
-              : "rgba(56,188,212,0.1)",
-            color: expanded ? "#C95A3E" : "#2A8FA0",
+            background: "#222",
+            color: "#555",
+            border: "1px solid #2e2e2e",
           }}
         >
           {line.grammarBreakdown.length} 项
@@ -123,17 +119,11 @@ export default function LyricLineCard({
         aria-hidden={!expanded}
       >
         <div className="grammar-grid-inner">
-          <div
-            className="p-5"
-            style={{
-              background: "#f8feff",
-              borderTop: "1px solid rgba(56,188,212,0.1)",
-            }}
-          >
+          <div className="p-4" style={{ borderTop: "1px solid #252525" }}>
             <div
               className="grid gap-3"
               style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
               }}
             >
               {line.grammarBreakdown.map((unit, i) => (

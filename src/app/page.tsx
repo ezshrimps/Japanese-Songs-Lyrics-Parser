@@ -13,10 +13,12 @@ const EXAMPLES = [
   "夜に駆けるのはやめてよ",
 ];
 
-// ── Spinner icon ──────────────────────────────────────────────────────────
+const MAX_CHARS = 5000;
+
+// ── Spinner ────────────────────────────────────────────────────────────────
 function Spinner() {
   return (
-    <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <svg className="animate-spin" width="15" height="15" viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
       <path fill="currentColor" className="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
@@ -24,9 +26,9 @@ function Spinner() {
 }
 
 // ── Sidebar toggle icon ───────────────────────────────────────────────────
-function IconPanelLeft({ open }: { open: boolean }) {
+function IconPanel({ open }: { open: boolean }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="9" y1="3" x2="9" y2="21" />
       {open ? (
@@ -40,13 +42,12 @@ function IconPanelLeft({ open }: { open: boolean }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [lyrics, setLyrics]           = useState("");
-  const [result, setResult]           = useState<ParsedResult[] | null>(null);
-  const [isLoading, setIsLoading]     = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [lyrics, setLyrics]             = useState("");
+  const [result, setResult]             = useState<ParsedResult[] | null>(null);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [error, setError]               = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState(false);
-  const [sidebarOpen, setSidebarOpen]  = useState(true);
-  const [inputFocused, setInputFocused] = useState(false);
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
 
   const { saved, save, remove, rename, togglePin } = useSavedLyrics();
 
@@ -77,147 +78,167 @@ export default function Home() {
   const handleSave = () => {
     const trimmed = lyrics.trim();
     if (!trimmed) return;
-    save(trimmed);
+    save(trimmed, result ?? undefined);
     setSaveFeedback(true);
     setTimeout(() => setSaveFeedback(false), 2000);
   };
 
   // Load from sidebar
-  const handleLoad = (content: string) => {
-    setLyrics(content);
-    setResult(null);
+  const handleLoad = (item: import("@/types").SavedLyric) => {
+    setLyrics(item.content);
+    setResult(item.parsedResult ?? null);
     setError(null);
   };
 
   return (
-    <div
-      className="flex h-screen overflow-hidden"
-      style={{
-        // Aurora: faint coral glow top-right, faint teal glow bottom-left
-        background: `
-          radial-gradient(ellipse 65% 45% at 92% 4%,  rgba(232,99,74,0.14) 0%, transparent 55%),
-          radial-gradient(ellipse 55% 40% at 6%  96%,  rgba(56,188,212,0.14) 0%, transparent 55%),
-          radial-gradient(ellipse 40% 30% at 50% 50%,  rgba(100,60,180,0.05) 0%, transparent 60%),
-          #07090e
-        `,
-      }}
-    >
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <div
-        className="flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out"
-        style={{ width: sidebarOpen ? 240 : 0 }}
+    <div style={{ background: "#0f0f0f", minHeight: "100vh" }}>
+
+      {/* ── Sticky Header ─────────────────────────────────────────────────── */}
+      <header
+        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5"
+        style={{
+          height: 52,
+          background: "#0f0f0f",
+          borderBottom: "1px solid #2e2e2e",
+        }}
       >
-        <div style={{ width: 240, height: "100%" }}>
-          <SavedLyricsSidebar
-            saved={saved}
-            onLoad={handleLoad}
-            onDelete={remove}
-            onRename={rename}
-            onTogglePin={togglePin}
-          />
+        {/* Logo */}
+        <div className="flex items-center gap-2.5">
+          <span style={{ color: "#E8634A", fontSize: "18px", lineHeight: 1 }}>♪</span>
+          <span className="font-semibold text-base" style={{ color: "#f0f0f0" }}>
+            歌词解析
+          </span>
         </div>
+
+        {/* Sidebar toggle */}
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+          className="flex items-center justify-center rounded-lg transition-all duration-150"
+          style={{
+            width: 32,
+            height: 32,
+            background: sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.04)",
+            border: `1px solid ${sidebarOpen ? "rgba(56,188,212,0.25)" : "#2e2e2e"}`,
+            color: sidebarOpen ? "#38BCD4" : "rgba(255,255,255,0.35)",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.15)";
+            (e.currentTarget as HTMLElement).style.color = "#38BCD4";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.04)";
+            (e.currentTarget as HTMLElement).style.color = sidebarOpen ? "#38BCD4" : "rgba(255,255,255,0.35)";
+          }}
+        >
+          <IconPanel open={sidebarOpen} />
+        </button>
+      </header>
+
+      {/* ── Sidebar (fixed, slides with translateX) ───────────────────────── */}
+      <div
+        className="fixed left-0 z-40 transition-transform duration-300"
+        style={{
+          top: 52,
+          width: 260,
+          height: "calc(100vh - 52px)",
+          transform: sidebarOpen ? "translateX(0)" : "translateX(-260px)",
+        }}
+      >
+        <SavedLyricsSidebar
+          saved={saved}
+          onLoad={handleLoad}
+          onDelete={remove}
+          onRename={rename}
+          onTogglePin={togglePin}
+        />
       </div>
 
-      {/* ── Main scroll area ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
-        <main className="max-w-2xl mx-auto px-6 py-10">
+      {/* ── Main scroll area ───────────────────────────────────────────────── */}
+      <div
+        className="transition-all duration-300 min-h-screen overflow-y-auto"
+        style={{
+          marginLeft: sidebarOpen ? 260 : 0,
+          paddingTop: 52,
+        }}
+      >
+        <main className="max-w-4xl mx-auto px-6 py-10">
 
-          {/* ── Header ──────────────────────────────────────────────────── */}
-          <header className="flex items-start justify-between mb-10">
-            <div>
-              <h1
-                className="text-4xl font-black tracking-tight leading-none mb-1.5"
-                style={{
-                  background: "linear-gradient(100deg, #E8634A 0%, #f0956c 40%, #38BCD4 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
-                歌詞解析
-              </h1>
-              <p
-                className="text-xs tracking-[0.22em] font-medium uppercase"
-                style={{ color: "rgba(255,255,255,0.3)" }}
-              >
-                Japanese Lyrics Parser
-              </p>
-            </div>
-
-            {/* Sidebar toggle */}
-            <button
-              onClick={() => setSidebarOpen((v) => !v)}
-              title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-              className="mt-1 p-2 rounded-xl transition-colors duration-150"
+          {/* ── Page title ───────────────────────────────────────────────── */}
+          <div className="mb-8">
+            <h1
+              className="text-3xl font-black tracking-tight leading-none mb-1"
               style={{
-                color: sidebarOpen ? "rgba(56,188,212,0.8)" : "rgba(255,255,255,0.35)",
-                background: sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.06)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.14)";
-                (e.currentTarget as HTMLElement).style.color = "rgba(56,188,212,0.9)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.06)";
-                (e.currentTarget as HTMLElement).style.color = sidebarOpen ? "rgba(56,188,212,0.8)" : "rgba(255,255,255,0.35)";
+                background: "linear-gradient(100deg, #E8634A 0%, #f0956c 45%, #38BCD4 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
               }}
             >
-              <IconPanelLeft open={sidebarOpen} />
-            </button>
-          </header>
+              歌詞解析
+            </h1>
+            <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: "#444" }}>
+              Japanese Lyrics Parser
+            </p>
+          </div>
 
           {/* ── Input card ──────────────────────────────────────────────── */}
           <form onSubmit={handleSubmit} className="mb-8">
             <div
-              className="rounded-2xl overflow-hidden transition-all duration-200"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: `1.5px solid ${inputFocused ? "rgba(56,188,212,0.45)" : "rgba(255,255,255,0.09)"}`,
-                boxShadow: inputFocused
-                  ? "0 0 0 3px rgba(56,188,212,0.1), 0 8px 32px rgba(0,0,0,0.25)"
-                  : "0 4px 24px rgba(0,0,0,0.2)",
-              }}
+              className="rounded-xl overflow-hidden"
+              style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
             >
               {/* Label */}
-              <div
-                className="px-5 pt-4 pb-1 flex items-center gap-2"
-              >
-                <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: "rgba(56,188,212,0.55)" }}>
+              <div className="px-4 pt-4 pb-1">
+                <span
+                  className="text-[10px] font-bold tracking-widest uppercase"
+                  style={{ color: "#38BCD4", opacity: 0.6 }}
+                >
                   歌詞入力
                 </span>
               </div>
 
-              {/* Textarea */}
-              <textarea
-                value={lyrics}
-                onChange={(e) => setLyrics(e.target.value)}
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-                placeholder={"輸入日語歌詞……支持多行整首歌曲\n\n例：事が一つ二つ浮いているけど\n    回り出したあの子と僕の未来が止まり"}
-                className="w-full bg-transparent text-white resize-none outline-none px-5 pb-4"
-                style={{
-                  fontSize: "1.05rem",
-                  lineHeight: "1.75",
-                  caretColor: "#38BCD4",
-                  minHeight: "140px",
-                }}
-                rows={6}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    handleSubmit(e as unknown as React.FormEvent);
-                  }
-                }}
-              />
+              {/* Textarea with char counter */}
+              <div className="relative">
+                <textarea
+                  value={lyrics}
+                  onChange={(e) => {
+                    if (e.target.value.length <= MAX_CHARS) setLyrics(e.target.value);
+                  }}
+                  placeholder={"输入日语歌词……支持多行整首歌曲\n\n例：事が一つ二つ浮いているけど\n    回り出したあの子と僕の未来が止まり"}
+                  className="w-full resize-none outline-none px-4 pb-8"
+                  style={{
+                    background: "#111111",
+                    color: "#f0f0f0",
+                    fontSize: "1rem",
+                    lineHeight: "1.8",
+                    caretColor: "#38BCD4",
+                    minHeight: "140px",
+                  }}
+                  rows={6}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      handleSubmit(e as unknown as React.FormEvent);
+                    }
+                  }}
+                />
+                {/* Char counter */}
+                <span
+                  className="absolute bottom-2 right-3 text-[10px] font-mono pointer-events-none"
+                  style={{
+                    color: lyrics.length > MAX_CHARS * 0.9 ? "#E8634A" : "#333",
+                  }}
+                >
+                  {lyrics.length}/{MAX_CHARS}
+                </span>
+              </div>
 
               {/* Example chips */}
               <div
-                className="px-5 pb-4 flex flex-wrap gap-2 items-center"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+                className="px-4 pb-4 flex flex-wrap gap-2 items-center"
+                style={{ borderTop: "1px solid #252525" }}
               >
-                <span
-                  className="text-xs"
-                  style={{ color: "rgba(255,255,255,0.25)", paddingTop: "0.75rem" }}
-                >
+                <span className="text-[10px] pt-3" style={{ color: "#444" }}>
                   试试：
                 </span>
                 {EXAMPLES.map((ex) => (
@@ -229,105 +250,63 @@ export default function Home() {
                     style={{
                       marginTop: "0.75rem",
                       padding: "3px 10px",
-                      background: "rgba(56,188,212,0.08)",
-                      border: "1px solid rgba(56,188,212,0.18)",
-                      color: "rgba(255,255,255,0.45)",
+                      background: "#171717",
+                      border: "1px solid #2e2e2e",
+                      color: "#555",
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.18)";
-                      (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.85)";
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(56,188,212,0.4)";
+                      (e.currentTarget as HTMLElement).style.background = "#252525";
+                      (e.currentTarget as HTMLElement).style.color = "#aaa";
+                      (e.currentTarget as HTMLElement).style.borderColor = "#444";
                     }}
                     onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.08)";
-                      (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.45)";
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(56,188,212,0.18)";
+                      (e.currentTarget as HTMLElement).style.background = "#171717";
+                      (e.currentTarget as HTMLElement).style.color = "#555";
+                      (e.currentTarget as HTMLElement).style.borderColor = "#2e2e2e";
                     }}
                   >
-                    {ex}
+                    ♪ {ex}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Buttons */}
-            <div className="flex items-center gap-3 mt-4">
-              {/* Parse */}
-              <button
-                type="submit"
-                disabled={isLoading || !lyrics.trim()}
-                className="flex-1 flex items-center justify-center gap-2.5 py-3.5 rounded-2xl font-bold text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
-                style={{
-                  background: "linear-gradient(135deg, #e8634a 0%, #cf4f38 100%)",
-                  boxShadow: isLoading || !lyrics.trim()
-                    ? "none"
-                    : "0 4px 20px rgba(232,99,74,0.35)",
-                  fontSize: "0.95rem",
-                  letterSpacing: "0.02em",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isLoading && lyrics.trim())
-                    (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 28px rgba(232,99,74,0.5)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 20px rgba(232,99,74,0.35)";
-                }}
-              >
-                {isLoading ? (
-                  <>
-                    <Spinner />
-                    <span>解析中……约 20–40 秒</span>
-                  </>
-                ) : (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <circle cx="11" cy="11" r="8" />
-                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                    </svg>
-                    解析歌词
-                  </>
-                )}
-              </button>
-
+            {/* Buttons row — ghost save (left) · coral parse (right) */}
+            <div className="flex items-center justify-between gap-3 mt-3">
               {/* Save */}
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={!lyrics.trim()}
-                className="flex items-center gap-2 px-6 py-3.5 rounded-2xl font-semibold transition-all duration-200 disabled:opacity-35 disabled:cursor-not-allowed active:scale-[0.98]"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{
-                  background: saveFeedback
-                    ? "rgba(56,188,212,0.18)"
-                    : "rgba(56,188,212,0.08)",
-                  border: `1.5px solid ${saveFeedback ? "rgba(56,188,212,0.6)" : "rgba(56,188,212,0.3)"}`,
-                  color: saveFeedback ? "#38BCD4" : "rgba(56,188,212,0.75)",
-                  fontSize: "0.9rem",
+                  background: "transparent",
+                  border: `1px solid ${saveFeedback ? "rgba(56,188,212,0.4)" : "#2e2e2e"}`,
+                  color: saveFeedback ? "#38BCD4" : "#666",
                 }}
                 onMouseEnter={(e) => {
                   if (lyrics.trim() && !saveFeedback) {
-                    (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.15)";
-                    (e.currentTarget as HTMLElement).style.borderColor = "rgba(56,188,212,0.5)";
-                    (e.currentTarget as HTMLElement).style.color = "#38BCD4";
+                    (e.currentTarget as HTMLElement).style.borderColor = "#444";
+                    (e.currentTarget as HTMLElement).style.color = "#aaa";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!saveFeedback) {
-                    (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.08)";
-                    (e.currentTarget as HTMLElement).style.borderColor = "rgba(56,188,212,0.3)";
-                    (e.currentTarget as HTMLElement).style.color = "rgba(56,188,212,0.75)";
+                    (e.currentTarget as HTMLElement).style.borderColor = "#2e2e2e";
+                    (e.currentTarget as HTMLElement).style.color = "#666";
                   }
                 }}
               >
                 {saveFeedback ? (
                   <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                     已保存
                   </>
                 ) : (
                   <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                       <polyline points="17 21 17 13 7 13 7 21" />
                       <polyline points="7 3 7 8 15 8" />
@@ -336,28 +315,53 @@ export default function Home() {
                   </>
                 )}
               </button>
-            </div>
 
-            {/* Hint */}
-            <p
-              className="text-center text-xs mt-3"
-              style={{ color: "rgba(255,255,255,0.18)" }}
-            >
-              ⌘ + Enter 快速解析
-            </p>
+              {/* Parse */}
+              <button
+                type="submit"
+                disabled={isLoading || !lyrics.trim()}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm text-white transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
+                style={{
+                  background: "linear-gradient(135deg, #e8634a 0%, #cf4f38 100%)",
+                  boxShadow: isLoading || !lyrics.trim() ? "none" : "0 3px 16px rgba(232,99,74,0.3)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading && lyrics.trim())
+                    (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 22px rgba(232,99,74,0.45)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.boxShadow = "0 3px 16px rgba(232,99,74,0.3)";
+                }}
+              >
+                {isLoading ? (
+                  <>
+                    <Spinner />
+                    解析中……
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    解析歌词 ⌘↵
+                  </>
+                )}
+              </button>
+            </div>
           </form>
 
           {/* ── Error ───────────────────────────────────────────────────── */}
           {error && (
             <div
-              className="rounded-2xl px-5 py-4 mb-6 flex items-center gap-3 animate-fade-in"
+              className="rounded-xl px-4 py-3 mb-6 flex items-center gap-3 animate-fade-in"
               style={{
-                background: "rgba(239,68,68,0.1)",
-                border: "1px solid rgba(239,68,68,0.2)",
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.18)",
                 color: "#fca5a5",
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -369,7 +373,6 @@ export default function Home() {
           {/* ── Results ─────────────────────────────────────────────────── */}
           {result && <LyricsDisplay data={result} />}
 
-          {/* Bottom padding */}
           <div className="h-16" />
         </main>
       </div>

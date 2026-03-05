@@ -1,68 +1,63 @@
 import { GrammarUnit } from "@/types";
 
 // ── Part-of-speech colour map ─────────────────────────────────────────────
-const POS_MAP: Array<[string, { accent: string; bg: string }]> = [
-  ["动词",   { accent: "#4A90E8", bg: "rgba(74,144,232,0.09)"  }],
-  ["名词",   { accent: "#E8634A", bg: "rgba(232,99,74,0.09)"   }],
-  ["形容",   { accent: "#9B59B6", bg: "rgba(155,89,182,0.09)"  }],
-  ["副词",   { accent: "#27AE60", bg: "rgba(39,174,96,0.09)"   }],
-  ["数词",   { accent: "#E67E22", bg: "rgba(230,126,34,0.09)"  }],
-  ["助词",   { accent: "#38BCD4", bg: "rgba(56,188,212,0.09)"  }],
-  ["感叹",   { accent: "#E8634A", bg: "rgba(232,99,74,0.09)"   }],
+const POS_MAP: Array<[string, string]> = [
+  ["动词", "#EEC170"],
+  ["名词", "#F58549"],
+  ["形容", "#F2A65A"],
+  ["副词", "#585123"],
+  ["数词", "#772F1A"],
+  ["助词", "#F2A65A"],
+  ["接续", "#EEC170"],
+  ["感叹", "#F58549"],
 ];
-const DEFAULT_POS = { accent: "#94A3B8", bg: "rgba(148,163,184,0.09)" };
+const DEFAULT_COLOR = "#EEC170";
 
-function posStyle(pos: string) {
-  for (const [key, style] of POS_MAP) {
-    if (pos.includes(key)) return style;
+function posColor(pos: string): string {
+  for (const [key, color] of POS_MAP) {
+    if (pos.includes(key)) return color;
   }
-  return DEFAULT_POS;
+  return DEFAULT_COLOR;
 }
 
 export default function GrammarCard({ unit }: { unit: GrammarUnit }) {
-  const { accent, bg } = posStyle(unit.partOfSpeech);
+  const color = posColor(unit.partOfSpeech);
 
   return (
     <div
-      className="flex flex-col rounded-2xl overflow-hidden"
+      className="grammar-card flex overflow-hidden rounded-xl"
       style={{
-        background: "#ffffff",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
-        border: "1px solid rgba(0,0,0,0.05)",
+        background: "#141414",
+        border: "1px solid #272727",
+        borderLeft: `3px solid ${color}`,
       }}
     >
-      {/* Coloured top stripe */}
-      <div style={{ height: 3, background: accent, opacity: 0.7 }} />
-
-      <div className="p-4 flex flex-col gap-2 flex-1">
+      <div className="flex flex-col gap-1.5 p-3 flex-1 min-w-0">
         {/* POS badge */}
         <span
-          className="self-start text-xs font-semibold px-2 py-0.5 rounded-full"
-          style={{ background: bg, color: accent }}
+          className="self-start text-[10px] font-semibold px-1.5 py-0.5 rounded"
+          style={{ background: `${color}22`, color }}
         >
           {unit.partOfSpeech}
         </span>
 
         {/* Word */}
-        <p
-          className="text-2xl font-black leading-tight"
-          style={{ color: "#1e293b" }}
-        >
+        <p className="text-xl font-bold leading-tight" style={{ color: "#f0f0f0" }}>
           {unit.text}
         </p>
 
         {/* Reading */}
-        <p className="text-xs font-medium" style={{ color: accent, opacity: 0.85 }}>
+        <p className="text-[11px]" style={{ color: "#555" }}>
           {unit.hiragana}
-          <span className="mx-1 opacity-40">·</span>
-          {unit.romaji}
+          <span className="mx-1 opacity-50">·</span>
+          <span style={{ color: "#444" }}>{unit.romaji}</span>
         </p>
 
         {/* Divider */}
-        <div className="h-px" style={{ background: "rgba(0,0,0,0.06)" }} />
+        <div style={{ height: 1, background: "#222" }} />
 
         {/* Explanation */}
-        <p className="text-xs leading-relaxed flex-1" style={{ color: "#475569" }}>
+        <p className="text-xs leading-relaxed" style={{ color: "#888" }}>
           {unit.explanation}
         </p>
       </div>

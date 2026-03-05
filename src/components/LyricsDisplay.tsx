@@ -6,14 +6,14 @@ export default function LyricsDisplay({ data }: { data: ParsedResult[] }) {
     <div>
       {/* Result header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="h-px flex-1" style={{ background: "rgba(255,255,255,0.1)" }} />
+        <div className="h-px flex-1" style={{ background: "#2e2e2e" }} />
         <span
-          className="text-xs font-semibold tracking-[0.15em] uppercase"
-          style={{ color: "rgba(255,255,255,0.35)" }}
+          className="text-[10px] font-semibold tracking-[0.18em] uppercase"
+          style={{ color: "#444" }}
         >
           解析结果 · {data.length} 行
         </span>
-        <div className="h-px flex-1" style={{ background: "rgba(255,255,255,0.1)" }} />
+        <div className="h-px flex-1" style={{ background: "#2e2e2e" }} />
       </div>
 
       <div className="flex flex-col gap-4">

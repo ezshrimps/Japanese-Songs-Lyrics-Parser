@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SavedLyric } from "@/types";
+import { SavedLyric, ParsedResult } from "@/types";
 
 const STORAGE_KEY = "jlp_saved_lyrics";
 
@@ -22,7 +22,7 @@ export function useSavedLyrics() {
     } catch {}
   };
 
-  const save = (content: string) => {
+  const save = (content: string, parsedResult?: ParsedResult[]) => {
     const title =
       content
         .split("\n")
@@ -32,6 +32,7 @@ export function useSavedLyrics() {
       id: Date.now().toString(),
       title: title.slice(0, 40),
       content,
+      parsedResult,
       pinned: false,
       savedAt: Date.now(),
     };
