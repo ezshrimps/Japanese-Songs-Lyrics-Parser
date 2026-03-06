@@ -105,21 +105,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    // Filter out blank lines before sending
-    const nonEmptyLyrics = lyrics
+    // Filter out blank lines
+    const allLines = lyrics
       .split("\n")
       .map((l) => l.trim())
-      .filter(Boolean)
-      .join("\n");
+      .filter(Boolean);
 
-    const message = await client.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 16000,
+    // Deduplicate: track first-occurrence index for each unique line
+    const uniqueLines: string[] = [];
+    const lineToIdx = new Map<string, number>();
+    const expandMap: number[] = []; // allLines[i] → index in uniqueLines
+
+    for (const line of allLines) {
+      if (!lineToIdx.has(line)) {
+        lineToIdx.set(line, uniqueLines.length);
+        uniqueLines.push(line);
+      }
+      expandMap.push(lineToIdx.get(line)!);
+    }
+
+    const stream = client.messages.stream({
+      model: "claude-sonnet-4-6",
+      max_tokens: 32000,
       system: SYSTEM_PROMPT,
       tools: [TOOL],
       tool_choice: { type: "tool", name: "analyze_lyrics" },
-      messages: [{ role: "user", content: nonEmptyLyrics }],
+      messages: [{ role: "user", content: uniqueLines.join("\n") }],
     });
+
+    const message = await stream.finalMessage();
+
+    if (message.stop_reason === "max_tokens") {
+      throw new Error("歌词过长，响应被截断。请减少行数后重试。");
+    }
 
     const toolUse = message.content.find((c) => c.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") {
@@ -129,7 +147,10 @@ export async function POST(request: NextRequest) {
     const { lines } = toolUse.input as { lines: Record<string, unknown>[] };
     const normalized = (lines ?? []).map(normalizeLineData);
 
-    return NextResponse.json(normalized);
+    // Expand back to original order, copying results for duplicate lines
+    const expanded = expandMap.map((i) => normalized[i]);
+
+    return NextResponse.json(expanded);
   } catch (error) {
     console.error("Parse error:", error);
     return NextResponse.json(

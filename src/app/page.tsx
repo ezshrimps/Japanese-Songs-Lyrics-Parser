@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import LyricsDisplay from "@/components/LyricsDisplay";
 import SavedLyricsSidebar from "@/components/SavedLyricsSidebar";
 import { useSavedLyrics } from "@/hooks/useSavedLyrics";
+import { useSavedGrammar } from "@/hooks/useSavedGrammar";
 import { ParsedResult } from "@/types";
 
 const EXAMPLES = [
@@ -48,8 +49,39 @@ export default function Home() {
   const [error, setError]               = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [progress, setProgress]         = useState(0);
+  const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Progress bar animation
+  useEffect(() => {
+    if (isLoading) {
+      setProgress(0);
+      const startTime = Date.now();
+      intervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        // Exponential ease-out: fast start, asymptotes toward 90%
+        setProgress(90 * (1 - Math.exp(-elapsed / 9000)));
+      }, 80);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setProgress((p) => {
+        if (p > 0) {
+          setTimeout(() => setProgress(0), 700);
+          return 100;
+        }
+        return 0;
+      });
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isLoading]);
 
   const { saved, save, remove, rename, togglePin } = useSavedLyrics();
+  const { savedGrammar, savedIds, save: saveGrammar, remove: removeGrammar } = useSavedGrammar();
 
   // Parse
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,6 +99,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? "解析失败，请重试");
       setResult(data);
+      save(trimmed, data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发生未知错误");
     } finally {
@@ -151,6 +184,8 @@ export default function Home() {
           onDelete={remove}
           onRename={rename}
           onTogglePin={togglePin}
+          savedGrammar={savedGrammar}
+          onDeleteGrammar={removeGrammar}
         />
       </div>
 
@@ -349,6 +384,42 @@ export default function Home() {
                 )}
               </button>
             </div>
+
+            {/* ── Progress bar ────────────────────────────────────────── */}
+            {progress > 0 && (
+              <div className="mt-4 animate-fade-in">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[11px]" style={{ color: "#666" }}>
+                    {progress < 30
+                      ? "正在分析歌词…"
+                      : progress < 65
+                      ? "正在解析语法…"
+                      : progress < 100
+                      ? "即将完成…"
+                      : "解析完成 ✓"}
+                  </span>
+                  <span className="text-[11px] font-mono" style={{ color: "#f0956c" }}>
+                    {Math.round(progress)}%
+                  </span>
+                </div>
+                <div
+                  className="rounded-full overflow-hidden"
+                  style={{ height: 3, background: "#1e1e1e" }}
+                >
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${progress}%`,
+                      background: "linear-gradient(90deg, #772F1A, #E8634A, #f0956c, #EEC170)",
+                      boxShadow: "0 0 6px rgba(240,149,108,0.45)",
+                      transition: progress === 100
+                        ? "width 0.3s ease"
+                        : "width 0.12s linear",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </form>
 
           {/* ── Error ───────────────────────────────────────────────────── */}
@@ -371,7 +442,7 @@ export default function Home() {
           )}
 
           {/* ── Results ─────────────────────────────────────────────────── */}
-          {result && <LyricsDisplay data={result} />}
+          {result && <LyricsDisplay data={result} savedIds={savedIds} onSaveGrammar={saveGrammar} />}
 
           <div className="h-16" />
         </main>

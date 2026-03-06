@@ -1,3 +1,10 @@
+export interface SavedGrammar {
+  id: string;
+  unit: GrammarUnit;
+  sourceLine: string;
+  savedAt: number;
+}
+
 export interface SavedLyric {
   id: string;
   title: string;

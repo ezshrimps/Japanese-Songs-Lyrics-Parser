@@ -7,7 +7,7 @@ const POS_MAP: Array<[string, string]> = [
   ["形容", "#F2A65A"],
   ["副词", "#585123"],
   ["数词", "#772F1A"],
-  ["助词", "#F2A65A"],
+  ["助词", "#EDEDE9"],
   ["接续", "#EEC170"],
   ["感叹", "#F58549"],
 ];
@@ -20,19 +20,47 @@ function posColor(pos: string): string {
   return DEFAULT_COLOR;
 }
 
-export default function GrammarCard({ unit }: { unit: GrammarUnit }) {
+interface Props {
+  unit: GrammarUnit;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
+  onSave: () => void;
+  isSaved: boolean;
+}
+
+export default function GrammarCard({ unit, onHoverIn, onHoverOut, onSave, isSaved }: Props) {
   const color = posColor(unit.partOfSpeech);
 
   return (
     <div
-      className="grammar-card flex overflow-hidden rounded-xl"
+      className="grammar-card relative flex overflow-hidden rounded-xl"
       style={{
         background: "#141414",
         border: "1px solid #272727",
         borderLeft: `3px solid ${color}`,
       }}
+      onMouseEnter={onHoverIn}
+      onMouseLeave={onHoverOut}
     >
-      <div className="flex flex-col gap-1.5 p-3 flex-1 min-w-0">
+      {/* Star button */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onSave(); }}
+        title={isSaved ? "已收藏" : "收藏此语法"}
+        className="absolute top-1.5 right-1.5 transition-colors duration-150"
+        style={{ color: isSaved ? "#EEC170" : "#333", lineHeight: 1 }}
+        onMouseEnter={(e) => {
+          if (!isSaved) (e.currentTarget as HTMLElement).style.color = "#888";
+        }}
+        onMouseLeave={(e) => {
+          if (!isSaved) (e.currentTarget as HTMLElement).style.color = "#333";
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+      </button>
+
+      <div className="flex flex-col gap-1.5 p-3 pr-6 flex-1 min-w-0">
         {/* POS badge */}
         <span
           className="self-start text-[10px] font-semibold px-1.5 py-0.5 rounded"

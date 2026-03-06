@@ -1,7 +1,13 @@
-import { ParsedResult } from "@/types";
+import { ParsedResult, GrammarUnit } from "@/types";
 import LyricLineCard from "./LyricLineCard";
 
-export default function LyricsDisplay({ data }: { data: ParsedResult[] }) {
+interface Props {
+  data: ParsedResult[];
+  savedIds: Set<string>;
+  onSaveGrammar: (unit: GrammarUnit, sourceLine: string) => void;
+}
+
+export default function LyricsDisplay({ data, savedIds, onSaveGrammar }: Props) {
   return (
     <div>
       {/* Result header */}
@@ -18,7 +24,13 @@ export default function LyricsDisplay({ data }: { data: ParsedResult[] }) {
 
       <div className="flex flex-col gap-4">
         {data.map((line, i) => (
-          <LyricLineCard key={i} line={line} index={i} />
+          <LyricLineCard
+            key={i}
+            line={line}
+            index={i}
+            savedIds={savedIds}
+            onSaveGrammar={onSaveGrammar}
+          />
         ))}
       </div>
     </div>
