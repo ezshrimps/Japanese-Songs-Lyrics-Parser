@@ -1,3 +1,9 @@
+export interface LineTimestamp {
+  lineIndex: number;
+  startTime: number;
+  endTime: number;
+}
+
 export interface SavedGrammar {
   id: string;
   unit: GrammarUnit;

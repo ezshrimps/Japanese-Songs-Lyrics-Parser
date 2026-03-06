@@ -79,9 +79,18 @@ interface Props {
   index?: number;
   savedIds: Set<string>;
   onSaveGrammar: (unit: GrammarUnit, sourceLine: string) => void;
+  timestamp?: { startTime: number; endTime: number };
+  isActive?: boolean;
+  onPlay?: () => void;
 }
 
-export default function LyricLineCard({ line, index = 0, savedIds, onSaveGrammar }: Props) {
+const fmt = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+export default function LyricLineCard({
+  line, index = 0, savedIds, onSaveGrammar,
+  timestamp, isActive = false, onPlay,
+}: Props) {
   const [expanded, setExpanded]       = useState(true);
   const [hoveredText, setHoveredText] = useState<string | null>(null);
 
@@ -108,13 +117,56 @@ export default function LyricLineCard({ line, index = 0, savedIds, onSaveGrammar
 
   return (
     <div
-      className="animate-fade-up rounded-xl overflow-hidden relative"
-      style={{ animationDelay: `${index * 55}ms`, background: "#1a1a1a", border: "1px solid #2e2e2e" }}
+      className="animate-fade-up rounded-xl overflow-hidden relative transition-all duration-300"
+      style={{
+        animationDelay: `${index * 55}ms`,
+        background: isActive ? "#1f1d18" : "#1a1a1a",
+        border: `1px solid ${isActive ? "rgba(238,193,112,0.45)" : "#2e2e2e"}`,
+        boxShadow: isActive ? "0 0 0 1px rgba(238,193,112,0.15), 0 4px 24px rgba(238,193,112,0.08)" : "none",
+      }}
     >
       {/* Line number */}
       <div className="absolute top-3 left-3 font-mono text-[10px]" style={{ color: "#333" }}>
         {String(index + 1).padStart(2, "0")}
       </div>
+
+      {/* Play button + timestamp */}
+      {timestamp && onPlay && (
+        <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
+          <span className="text-[10px] font-mono" style={{ color: "#444" }}>
+            {fmt(timestamp.startTime)}
+          </span>
+          <button
+            onClick={onPlay}
+            title="从此处播放"
+            className="flex items-center justify-center rounded-md transition-all duration-150"
+            style={{
+              width: 22, height: 22,
+              background: isActive ? "rgba(238,193,112,0.2)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${isActive ? "rgba(238,193,112,0.4)" : "#2e2e2e"}`,
+              color: isActive ? "#EEC170" : "#555",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(238,193,112,0.15)";
+              (e.currentTarget as HTMLElement).style.color = "#EEC170";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = isActive ? "rgba(238,193,112,0.2)" : "rgba(255,255,255,0.05)";
+              (e.currentTarget as HTMLElement).style.color = isActive ? "#EEC170" : "#555";
+            }}
+          >
+            {isActive ? (
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ── Lyric body ─────────────────────────────────────────────────── */}
       <div className="px-8 pt-10 pb-8 text-center">
