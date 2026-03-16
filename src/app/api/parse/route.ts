@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     const normalized = (lines ?? []).map((line) => {
       const result = normalizeLineData(line);
       // Compute and store normalized hiragana at parse time so align can use it
-      result.kana = result.segments
+      result.kana = (result.segments ?? [])
         .map((s) => s.hiragana ?? s.text)
         .join("")
         .replace(/[\u30A1-\u30F6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
@@ -162,9 +162,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(expanded);
   } catch (error) {
     console.error("Parse error:", error);
-    return NextResponse.json(
-      { error: "Failed to parse lyrics. Please try again." },
-      { status: 500 }
-    );
+    const msg = error instanceof Error ? error.message : "Failed to parse lyrics. Please try again.";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
