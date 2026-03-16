@@ -149,13 +149,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid lyrics format" }, { status: 400 });
     }
 
-    // Build the script: normalized kana for each non-empty line, joined by spaces.
-    // Forced-alignment aligns this script character-by-character to the audio.
-    const nonEmptyKana = lines
-      .map((line, i) => ({ line, kanaLine: kana[i] ?? line, i }))
-      .filter(({ line }) => line.replace(/\s/g, "").length > 0)
-      .map(({ kanaLine }) => norm(kanaLine));
-    const script = nonEmptyKana.join(" ");
+    // Build the script: each kana character as a separate space-delimited token
+    // so forced-alignment returns one timestamp per character.
+    const allChars = lines
+      .filter((line) => line.replace(/\s/g, "").length > 0)
+      .flatMap((line, i) => Array.from(norm(kana[i] ?? line)));
+    const script = allChars.join(" ");
 
     const audioBlob = new Blob([await audioFile.arrayBuffer()], {
       type: audioFile.type || "audio/mpeg",
