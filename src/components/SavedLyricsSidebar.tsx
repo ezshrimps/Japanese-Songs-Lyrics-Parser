@@ -57,8 +57,9 @@ function IconTrash() {
 }
 
 // ── SidebarItem (lyrics) ──────────────────────────────────────────────────
-function SidebarItem({ item, onLoad, onDelete, onTogglePin, onRename }: {
+function SidebarItem({ item, isActive, onLoad, onDelete, onTogglePin, onRename }: {
   item: SavedLyric;
+  isActive: boolean;
   onLoad: () => void;
   onDelete: () => void;
   onTogglePin: () => void;
@@ -73,14 +74,13 @@ function SidebarItem({ item, onLoad, onDelete, onTogglePin, onRename }: {
     setEditing(false);
   };
 
+  const bg        = isActive ? "rgba(238,193,112,0.07)" : item.pinned ? "rgba(232,93,74,0.06)" : "transparent";
+  const borderCol = isActive ? "#EEC170" : item.pinned ? "#e85d4a" : "transparent";
+
   return (
     <div
       className="group relative mx-2 mb-0.5"
-      style={{
-        borderRadius: 8,
-        background: item.pinned ? "rgba(232,93,74,0.06)" : "transparent",
-        borderLeft: item.pinned ? "2px solid #e85d4a" : "2px solid transparent",
-      }}
+      style={{ borderRadius: 8, background: bg, borderLeft: `2px solid ${borderCol}` }}
     >
       {editing ? (
         <div className="flex items-center px-3 py-2.5">
@@ -101,11 +101,14 @@ function SidebarItem({ item, onLoad, onDelete, onTogglePin, onRename }: {
         <div
           className="flex items-center gap-2 px-3 py-2.5 cursor-pointer rounded-lg transition-colors duration-150"
           onClick={onLoad}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#1e1e1e"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#1e1e1e"; }}
+          onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
         >
-          {item.pinned && <span style={{ color: "#e85d4a", flexShrink: 0 }}><IconPin active /></span>}
-          <span className="flex-1 min-w-0 text-[13px] truncate" style={{ color: item.pinned ? "rgba(255,255,255,0.82)" : "#aaa" }}>
+          {isActive
+            ? <span style={{ color: "#EEC170", flexShrink: 0, fontSize: 9 }}>▶</span>
+            : item.pinned && <span style={{ color: "#e85d4a", flexShrink: 0 }}><IconPin active /></span>
+          }
+          <span className="flex-1 min-w-0 text-[13px] truncate" style={{ color: isActive ? "#EEC170" : item.pinned ? "rgba(255,255,255,0.82)" : "#aaa" }}>
             {item.title}
           </span>
           {item.timestamps && item.timestamps.length > 0 && (
@@ -180,6 +183,7 @@ function GrammarItem({ item, onDelete }: { item: SavedGrammar; onDelete: () => v
 // ── Sidebar ──────────────────────────────────────────────────────────────
 interface Props {
   saved: SavedLyric[];
+  currentId?: string;
   onLoad: (item: SavedLyric) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -187,11 +191,12 @@ interface Props {
   savedGrammar: SavedGrammar[];
   onDeleteGrammar: (id: string) => void;
   onToggleSidebar: () => void;
+  onNewSong?: () => void;
 }
 
 export default function SavedLyricsSidebar({
-  saved, onLoad, onDelete, onRename, onTogglePin,
-  savedGrammar, onDeleteGrammar, onToggleSidebar,
+  saved, currentId, onLoad, onDelete, onRename, onTogglePin,
+  savedGrammar, onDeleteGrammar, onToggleSidebar, onNewSong,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"lyrics" | "grammar">("lyrics");
 
@@ -252,31 +257,48 @@ export default function SavedLyricsSidebar({
       {/* List */}
       <div className="flex-1 overflow-y-auto py-2">
         {activeTab === "lyrics" ? (
-          saved.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <div className="text-2xl mb-3 opacity-10">♪</div>
-              <p className="text-[11px] leading-relaxed" style={{ color: "#333" }}>暂无保存的歌词</p>
+          <>
+            {/* New song — always first */}
+            <div className="mx-2 mb-1">
+              <button
+                onClick={onNewSong}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-[13px] font-semibold transition-all duration-150"
+                style={{ color: "#E8634A", background: "rgba(232,99,74,0.06)", border: "1px dashed rgba(232,99,74,0.25)" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(232,99,74,0.12)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(232,99,74,0.45)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(232,99,74,0.06)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(232,99,74,0.25)"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                新建歌曲
+              </button>
             </div>
-          ) : (
-            <>
-              {pinned.length > 0 && (
-                <>
-                  <p className="px-5 pt-1.5 pb-1 text-[9px] font-bold tracking-[0.18em] uppercase" style={{ color: "rgba(232,93,74,0.4)" }}>置顶</p>
-                  {pinned.map((item) => (
-                    <SidebarItem key={item.id} item={item}
-                      onLoad={() => onLoad(item)} onDelete={() => onDelete(item.id)}
-                      onTogglePin={() => onTogglePin(item.id)} onRename={(t) => onRename(item.id, t)} />
-                  ))}
-                  {unpinned.length > 0 && <div className="mx-5 my-2" style={{ height: 1, background: "#222" }} />}
-                </>
-              )}
-              {unpinned.map((item) => (
-                <SidebarItem key={item.id} item={item}
-                  onLoad={() => onLoad(item)} onDelete={() => onDelete(item.id)}
-                  onTogglePin={() => onTogglePin(item.id)} onRename={(t) => onRename(item.id, t)} />
-              ))}
-            </>
-          )
+
+            {saved.length === 0 ? (
+              <div className="px-5 py-6 text-center">
+                <p className="text-[11px]" style={{ color: "#333" }}>暂无保存的歌词</p>
+              </div>
+            ) : (
+              <>
+                {pinned.length > 0 && (
+                  <>
+                    <p className="px-5 pt-1.5 pb-1 text-[9px] font-bold tracking-[0.18em] uppercase" style={{ color: "rgba(232,93,74,0.4)" }}>置顶</p>
+                    {pinned.map((item) => (
+                      <SidebarItem key={item.id} item={item} isActive={item.id === currentId}
+                        onLoad={() => onLoad(item)} onDelete={() => onDelete(item.id)}
+                        onTogglePin={() => onTogglePin(item.id)} onRename={(t) => onRename(item.id, t)} />
+                    ))}
+                    {unpinned.length > 0 && <div className="mx-5 my-2" style={{ height: 1, background: "#222" }} />}
+                  </>
+                )}
+                {unpinned.map((item) => (
+                  <SidebarItem key={item.id} item={item} isActive={item.id === currentId}
+                    onLoad={() => onLoad(item)} onDelete={() => onDelete(item.id)}
+                    onTogglePin={() => onTogglePin(item.id)} onRename={(t) => onRename(item.id, t)} />
+                ))}
+              </>
+            )}
+          </>
         ) : (
           savedGrammar.length === 0 ? (
             <div className="px-5 py-8 text-center">
