@@ -126,8 +126,16 @@ async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
     throw new Error("No tool_use block in response");
   }
 
-  const { lines } = toolUse.input as { lines: Record<string, unknown>[] };
-  return (lines ?? []).map((line) => attachKana(normalizeLineData(line)));
+  const { lines: rawLines } = toolUse.input as { lines: unknown };
+  let lines: Record<string, unknown>[];
+  if (Array.isArray(rawLines)) {
+    lines = rawLines;
+  } else if (typeof rawLines === "string") {
+    try { lines = JSON.parse(rawLines); } catch { lines = []; }
+  } else {
+    lines = [];
+  }
+  return lines.map((line) => attachKana(normalizeLineData(line)));
 }
 
 export async function POST(request: NextRequest) {
