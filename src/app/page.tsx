@@ -14,7 +14,7 @@ const EXAMPLES = [
   "夜に駆けるのはやめてよ",
 ];
 
-const MAX_CHARS = 5000;
+const MAX_CHARS = 20000;
 
 // ── Kana helpers ──────────────────────────────────────────────────────────
 function toHiragana(text: string): string {
@@ -147,7 +147,7 @@ export default function Home() {
   const [isAligning, setIsAligning]     = useState(false);
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [alignModel, setAlignModel]     = useState("medium");
-  const [level, setLevel]               = useState<"初级" | "中级" | "高级">("初级");
+  const [level, setLevel]               = useState<"初级" | "中级" | "高级">("中级");
 
   // Keep ref in sync with state (avoids stale closure reads in event handlers)
   const setActiveLine = (idx: number | null) => {
@@ -209,7 +209,8 @@ export default function Home() {
     };
   }, [isLoading]);
 
-  const { saved, save, remove, rename, togglePin } = useSavedLyrics();
+  const [currentSavedId, setCurrentSavedId] = useState<string | null>(null);
+  const { saved, save, remove, rename, togglePin, updateTimestamps } = useSavedLyrics();
   const { savedGrammar, savedIds, save: saveGrammar, remove: removeGrammar } = useSavedGrammar();
 
   // Parse
@@ -229,7 +230,8 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? "解析失败，请重试");
       setResult(data);
-      save(trimmed, data);
+      const id = save(trimmed, data);
+      setCurrentSavedId(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发生未知错误");
     } finally {
@@ -241,7 +243,8 @@ export default function Home() {
   const handleSave = () => {
     const trimmed = lyrics.trim();
     if (!trimmed) return;
-    save(trimmed, result ?? undefined);
+    const id = save(trimmed, result ?? undefined);
+    setCurrentSavedId(id);
     setSaveFeedback(true);
     setTimeout(() => setSaveFeedback(false), 2000);
   };
@@ -252,12 +255,13 @@ export default function Home() {
     setResult(item.parsedResult ?? null);
     setError(null);
     setAudioUrl(null);
-    setTimestamps(null);
+    setTimestamps(item.timestamps ?? null);
     setActiveLine(null);
     segmentEndRef.current = null;
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
+    setCurrentSavedId(item.id);
   };
 
   // Audio: upload MP3 + call align API
@@ -288,7 +292,10 @@ export default function Home() {
       formData.append("model", alignModel);
       const res  = await fetch("/api/align", { method: "POST", body: formData });
       const data = await res.json();
-      if (res.ok && data.timestamps) setTimestamps(data.timestamps);
+      if (res.ok && data.timestamps) {
+        setTimestamps(data.timestamps);
+        if (currentSavedId) updateTimestamps(currentSavedId, data.timestamps);
+      }
     } catch (err) {
       console.error("Align error:", err);
     } finally {
@@ -370,28 +377,7 @@ export default function Home() {
           </span>
         </div>
 
-        <button
-          onClick={() => setSidebarOpen((v) => !v)}
-          title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-          className="flex items-center justify-center rounded-lg transition-all duration-150"
-          style={{
-            width: 32,
-            height: 32,
-            background: sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.04)",
-            border: `1px solid ${sidebarOpen ? "rgba(56,188,212,0.25)" : "#2e2e2e"}`,
-            color: sidebarOpen ? "#38BCD4" : "rgba(255,255,255,0.35)",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.15)";
-            (e.currentTarget as HTMLElement).style.color = "#38BCD4";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = sidebarOpen ? "rgba(56,188,212,0.1)" : "rgba(255,255,255,0.04)";
-            (e.currentTarget as HTMLElement).style.color = sidebarOpen ? "#38BCD4" : "rgba(255,255,255,0.35)";
-          }}
-        >
-          <IconPanel open={sidebarOpen} />
-        </button>
+        <div style={{ width: 32 }} />
       </header>
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
@@ -412,8 +398,35 @@ export default function Home() {
           onTogglePin={togglePin}
           savedGrammar={savedGrammar}
           onDeleteGrammar={removeGrammar}
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
         />
       </div>
+
+      {/* ── Sidebar open tab (when sidebar is closed) ─────────────────────── */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          title="展开侧边栏"
+          className="fixed z-40 flex items-center justify-center transition-all duration-150"
+          style={{
+            top: 52 + 12,
+            left: 0,
+            width: 20,
+            height: 32,
+            background: "#1a1a1a",
+            border: "1px solid #2e2e2e",
+            borderLeft: "none",
+            borderRadius: "0 6px 6px 0",
+            color: "#444",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#aaa"; (e.currentTarget as HTMLElement).style.background = "#252525"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#444"; (e.currentTarget as HTMLElement).style.background = "#1a1a1a"; }}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
 
       {/* ── Main scroll area ───────────────────────────────────────────────── */}
       <div
@@ -428,7 +441,7 @@ export default function Home() {
           {/* ── Page title ───────────────────────────────────────────────── */}
           <div className="mb-8">
             <h1
-              className="text-3xl font-black tracking-tight leading-none mb-1"
+              className="text-4xl font-black tracking-tight leading-snug mb-1"
               style={{
                 background: "linear-gradient(100deg, #E8634A 0%, #f0956c 45%, #38BCD4 100%)",
                 WebkitBackgroundClip: "text",
@@ -436,7 +449,7 @@ export default function Home() {
                 backgroundClip: "text",
               }}
             >
-              歌詞解析
+              虾学日语歌 ShrimpLyricsParser
             </h1>
             <p className="text-[10px] tracking-[0.22em] uppercase" style={{ color: "#444" }}>
               Japanese Lyrics Parser
@@ -475,7 +488,7 @@ export default function Home() {
                     >
                       根据你的日语水平决定语法解析的深度。<br />
                       <span style={{ color: "#27AE60" }}>初级</span>：解析所有语法包括基础助词。<br />
-                      <span style={{ color: "#4A90E8" }}>中级</span>：跳过常见助词，聚焦句型变化。<br />
+                      <span style={{ color: "#4A90E8" }}>中级</span>：跳过常见助词，聚焦句型变化。<span style={{ color: "#4A90E8" }}>（推荐）</span><br />
                       <span style={{ color: "#9B59B6" }}>高级</span>：仅解析 N3 以上复杂语法。
                     </div>
                   </div>
@@ -515,7 +528,7 @@ export default function Home() {
                   className="text-[10px] font-bold tracking-widest uppercase"
                   style={{ color: "#38BCD4", opacity: 0.6 }}
                 >
-                  歌詞入力
+                  输入歌词
                 </span>
               </div>
 

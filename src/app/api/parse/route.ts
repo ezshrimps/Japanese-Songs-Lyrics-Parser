@@ -4,8 +4,8 @@ import { ParsedResult } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const BATCH_SIZE = 25; // lines per Claude request
-const MAX_CHARS  = 15000;
+const MAX_CHARS   = 20000;
+const BATCH_SIZE  = 4;   // lines per Haiku call — keeps output well within 8k token limit
 
 const SYSTEM_PROMPT = `You are a Japanese language expert specializing in song lyric analysis for Chinese-speaking learners.
 
@@ -128,8 +128,8 @@ Only explain: advanced grammar patterns (passive, causative, conditionals ば/�
 async function parseBatch(batchLines: string[], level = "初级"): Promise<ParsedResult[]> {
   const levelNote = LEVEL_PROMPT[level] ?? "";
   const stream = client.messages.stream({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 8000,
     system: SYSTEM_PROMPT + levelNote,
     tools: [TOOL],
     tool_choice: { type: "tool", name: "analyze_lyrics" },
@@ -183,19 +183,21 @@ export async function POST(request: NextRequest) {
       expandMap.push(lineToIdx.get(line)!);
     }
 
-    // Split into batches and parse in parallel
+    // Split unique lines into small batches, run in parallel
     const batches: string[][] = [];
     for (let i = 0; i < uniqueLines.length; i += BATCH_SIZE) {
       batches.push(uniqueLines.slice(i, i + BATCH_SIZE));
     }
 
-    console.log(`[parse] ${uniqueLines.length} unique lines → ${batches.length} batch(es)`);
+    console.log(`[parse] ${allLines.length} lines → ${uniqueLines.length} unique → ${batches.length} batch(es)`);
 
     const batchResults = await Promise.all(batches.map((b) => parseBatch(b, level)));
     const normalized = batchResults.flat();
 
-    // Expand back to original order
-    const expanded = expandMap.map((i) => normalized[i]);
+    // Expand back to original order, skip any entries Claude missed
+    const expanded = expandMap
+      .map((i) => normalized[i])
+      .filter((r): r is ParsedResult => r != null);
 
     return NextResponse.json(expanded);
   } catch (error) {

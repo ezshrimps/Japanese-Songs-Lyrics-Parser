@@ -10,6 +10,7 @@ export interface SavedLyric {
   title: string;
   content: string;
   parsedResult?: ParsedResult[];
+  timestamps?: LineTimestamp[];
   pinned: boolean;
   savedAt: number;
 }

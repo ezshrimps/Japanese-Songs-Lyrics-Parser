@@ -108,6 +108,9 @@ function SidebarItem({ item, onLoad, onDelete, onTogglePin, onRename }: {
           <span className="flex-1 min-w-0 text-[13px] truncate" style={{ color: item.pinned ? "rgba(255,255,255,0.82)" : "#aaa" }}>
             {item.title}
           </span>
+          {item.timestamps && item.timestamps.length > 0 && (
+            <span title="已保存对位时间轴" style={{ color: "#EEC170", fontSize: 10, flexShrink: 0, opacity: 0.7 }}>♪</span>
+          )}
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex-shrink-0">
             <button title={item.pinned ? "取消置顶" : "置顶"} onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
               className="p-1 rounded transition-colors" style={{ color: item.pinned ? "#e85d4a" : "rgba(255,255,255,0.3)" }}
@@ -183,11 +186,12 @@ interface Props {
   onTogglePin: (id: string) => void;
   savedGrammar: SavedGrammar[];
   onDeleteGrammar: (id: string) => void;
+  onToggleSidebar: () => void;
 }
 
 export default function SavedLyricsSidebar({
   saved, onLoad, onDelete, onRename, onTogglePin,
-  savedGrammar, onDeleteGrammar,
+  savedGrammar, onDeleteGrammar, onToggleSidebar,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"lyrics" | "grammar">("lyrics");
 
@@ -198,9 +202,25 @@ export default function SavedLyricsSidebar({
     <aside className="flex flex-col h-full" style={{ background: "#111111", borderRight: "1px solid #2e2e2e" }}>
       {/* Header */}
       <div className="px-4 pt-4 pb-0 flex-shrink-0">
-        <h2 className="text-[11px] font-bold tracking-[0.18em] uppercase mb-3" style={{ color: "#555" }}>
-          收藏
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[11px] font-bold tracking-[0.18em] uppercase" style={{ color: "#555" }}>
+            收藏
+          </h2>
+          <button
+            onClick={onToggleSidebar}
+            title="收起侧边栏"
+            className="flex items-center justify-center rounded-md transition-all duration-150"
+            style={{ width: 24, height: 24, color: "#444" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#888"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#444"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+              <polyline points="15 8 11 12 15 16" />
+            </svg>
+          </button>
+        </div>
         {/* Tabs */}
         <div className="flex gap-1" style={{ borderBottom: "1px solid #2a2a2a", paddingBottom: 0 }}>
           {(["lyrics", "grammar"] as const).map((tab) => {

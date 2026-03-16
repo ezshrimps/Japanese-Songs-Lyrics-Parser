@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SavedLyric, ParsedResult } from "@/types";
+import { SavedLyric, ParsedResult, LineTimestamp } from "@/types";
 
 const STORAGE_KEY = "jlp_saved_lyrics";
 
@@ -22,14 +22,15 @@ export function useSavedLyrics() {
     } catch {}
   };
 
-  const save = (content: string, parsedResult?: ParsedResult[]) => {
+  const save = (content: string, parsedResult?: ParsedResult[]): string => {
     const title =
       content
         .split("\n")
         .map((l) => l.trim())
         .find((l) => l.length > 0) ?? "无题";
+    const id = Date.now().toString();
     const item: SavedLyric = {
-      id: Date.now().toString(),
+      id,
       title: title.slice(0, 40),
       content,
       parsedResult,
@@ -37,6 +38,7 @@ export function useSavedLyrics() {
       savedAt: Date.now(),
     };
     persist([item, ...items]);
+    return id;
   };
 
   const remove = (id: string) => persist(items.filter((i) => i.id !== id));
@@ -47,11 +49,14 @@ export function useSavedLyrics() {
   const togglePin = (id: string) =>
     persist(items.map((i) => (i.id === id ? { ...i, pinned: !i.pinned } : i)));
 
+  const updateTimestamps = (id: string, timestamps: LineTimestamp[]) =>
+    persist(items.map((i) => (i.id === id ? { ...i, timestamps } : i)));
+
   // Pinned items first, both groups sorted newest first
   const sorted = [
     ...items.filter((i) => i.pinned).sort((a, b) => b.savedAt - a.savedAt),
     ...items.filter((i) => !i.pinned).sort((a, b) => b.savedAt - a.savedAt),
   ];
 
-  return { saved: sorted, save, remove, rename, togglePin };
+  return { saved: sorted, save, remove, rename, togglePin, updateTimestamps };
 }
