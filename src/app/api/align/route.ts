@@ -8,9 +8,8 @@ const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 
 export const maxDuration = 600;
 
-interface WordStamp { word: string; start: number; end: number; score?: number; }
-interface Segment   { start: number; end: number; text: string; words?: WordStamp[]; }
-interface WhisperXOutput { segments: Segment[]; detected_language: string; }
+interface WordStamp { word: string; start: number; end: number; }
+interface FAOutput  extends WordStamp { [key: string]: number | string; }
 
 // ── Text normalization ─────────────────────────────────────────────────────
 /** Katakana → hiragana, strip spaces & punctuation */
@@ -33,9 +32,8 @@ interface AlignDetail {
 /**
  * Count-based alignment.
  *
- * WhisperX with align_output=true produces character-level stamps for Japanese
- * (one word ≈ one kana character). Each lyric line simply consumes
- * norm(kana).length consecutive words from the word list, sequentially.
+ * Forced-alignment outputs one token per character of the script we sent.
+ * Each lyric line consumes norm(kana).length consecutive tokens, sequentially.
  *
  * Example: あいはどこからやってくるのでしょう (17 chars) → words[0..16]
  *          next line (N chars) → words[17..17+N-1]
@@ -90,8 +88,7 @@ function writeAlignLog(words: WordStamp[], details: AlignDetail[]): void {
   out.push("═".repeat(80));
   out.push("");
 
-  // Section 1: all WhisperX words
-  out.push("── WhisperX words " + "─".repeat(61));
+  out.push("── FA words " + "─".repeat(67));
   out.push(` ${"idx".padEnd(5)} ${"start".padEnd(10)} ${"end".padEnd(10)} word`);
   out.push(" " + "─".repeat(40));
   for (let i = 0; i < words.length; i++) {
@@ -100,7 +97,6 @@ function writeAlignLog(words: WordStamp[], details: AlignDetail[]): void {
   }
   out.push("");
 
-  // Section 2: per-line mapping
   out.push("── Line mapping " + "─".repeat(63));
   out.push(
     ` ${"#".padEnd(4)} ${"wi_s".padEnd(6)} ${"wi_e".padEnd(6)}` +
@@ -147,39 +143,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid lyrics format" }, { status: 400 });
     }
 
+    // Build the script: normalized kana for each non-empty line, joined by spaces.
+    // Forced-alignment aligns this script character-by-character to the audio.
+    const nonEmptyKana = lines
+      .map((line, i) => ({ line, kanaLine: kana[i] ?? line, i }))
+      .filter(({ line }) => line.replace(/\s/g, "").length > 0)
+      .map(({ kanaLine }) => norm(kanaLine));
+    const script = nonEmptyKana.join(" ");
+
     const audioBlob = new Blob([await audioFile.arrayBuffer()], {
       type: audioFile.type || "audio/mpeg",
     });
 
-    console.log(`[align] whisperx starting — ${lines.length} lines`);
+    console.log(`[align] forced-alignment starting — ${lines.length} lines, script length ${script.length}`);
     const output = (await replicate.run(
-      "victor-upmeet/whisperx:84d2ad2d6194fe98a17d2b60bef1c7f910c46b2f6fd38996ca457afd9c8abfcb",
+      "quinten-kamphuis/forced-alignment:566a5a9530375ba0428344b66027520e83f832527bc04c5c4770cea1d3e6fcc7",
       {
         input: {
-          audio_file: audioBlob,
-          language: "ja",
-          align_output: true,
-          batch_size: 16,
-          initial_prompt: kana.filter((_, i) => lines[i]?.trim()).map((k) => norm(k)).join("　"),
+          audio: audioBlob,
+          script,
         },
       },
-    )) as WhisperXOutput;
+    )) as FAOutput[];
 
-    if (!output?.segments?.length) {
-      return NextResponse.json({ error: "whisperx: no segments returned" }, { status: 500 });
+    if (!Array.isArray(output) || output.length === 0) {
+      return NextResponse.json({ error: "forced-alignment: no output returned" }, { status: 500 });
     }
 
-    const allWords: WordStamp[] = output.segments
-      .flatMap((s) => s.words ?? [])
-      .filter((w) => typeof w.start === "number" && typeof w.end === "number");
+    // Filter to valid stamps only (model may emit null start/end for unaligned tokens)
+    const allWords: WordStamp[] = output
+      .filter((w) => typeof w.start === "number" && typeof w.end === "number")
+      .map((w) => ({ word: String(w.word ?? ""), start: Number(w.start), end: Number(w.end) }));
 
-    console.log(`[align] ${output.segments.length} segments, ${allWords.length} words`);
+    console.log(`[align] ${allWords.length} / ${output.length} tokens with timestamps`);
 
     if (allWords.length < 2) {
-      return NextResponse.json({ error: "whisperx: no word-level timestamps returned" }, { status: 500 });
+      return NextResponse.json({ error: "forced-alignment: insufficient word timestamps" }, { status: 500 });
     }
 
-    console.log(`[align] count-aligning ${allWords.length} words → ${lines.length} lines`);
     const { timestamps, details } = alignByCount(allWords, kana, lines);
     console.log(`[align] mapped ${timestamps.length} / ${lines.length} lines`);
 
