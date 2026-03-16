@@ -5,6 +5,15 @@ import { ParsedResult, GrammarUnit, Segment } from "@/types";
 import GrammarCard from "./GrammarCard";
 import { grammarId } from "@/hooks/useSavedGrammar";
 
+function Spinner() {
+  return (
+    <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path fill="currentColor" className="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────
 const HL_STYLE: React.CSSProperties = {
   color: "#EEC170",
@@ -80,6 +89,7 @@ interface Props {
   isActive?: boolean;
   isLinePlaying?: boolean;
   onPlay?: () => void;
+  level?: string;
 }
 
 const fmt = (s: number) =>
@@ -87,10 +97,41 @@ const fmt = (s: number) =>
 
 export default function LyricLineCard({
   line, index = 0, savedIds, onSaveGrammar,
-  timestamp, isActive = false, isLinePlaying = false, onPlay,
+  timestamp, isActive = false, isLinePlaying = false, onPlay, level = "中级",
 }: Props) {
-  const [expanded, setExpanded]       = useState(true);
-  const [hoveredText, setHoveredText] = useState<string | null>(null);
+  const [expanded, setExpanded]         = useState(false);
+  const [hoveredText, setHoveredText]   = useState<string | null>(null);
+  // null = not yet loaded, [] = loaded (possibly empty), GrammarUnit[] = loaded with items
+  const [grammar, setGrammar]           = useState<GrammarUnit[] | null>(
+    line.grammarBreakdown.length > 0 ? line.grammarBreakdown : null
+  );
+  const [grammarLoading, setGrammarLoading] = useState(false);
+
+  const loadGrammar = async () => {
+    if (grammar !== null || grammarLoading) return;
+    setGrammarLoading(true);
+    try {
+      const res = await fetch("/api/grammar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line: line.originalText, level }),
+      });
+      const data = await res.json();
+      setGrammar(Array.isArray(data.units) ? data.units : []);
+    } catch {
+      setGrammar([]);
+    } finally {
+      setGrammarLoading(false);
+    }
+  };
+
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) loadGrammar();
+  };
+
+  const displayGrammar = grammar ?? [];
 
   const { fullText, segStarts } = useMemo(() => {
     let pos = 0;
@@ -193,24 +234,26 @@ export default function LyricLineCard({
 
       {/* ── Grammar toggle ──────────────────────────────────────────────── */}
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={handleToggle}
         className="w-full flex items-center justify-between px-5 py-2.5 transition-colors duration-150"
         style={{ borderTop: "1px solid #2a2a2a", background: "transparent" }}
         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#222"; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
       >
         <span className="flex items-center gap-2 text-xs font-medium" style={{ color: "#555" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-            className="transition-transform duration-300"
-            style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          {grammarLoading ? <Spinner /> : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+              className="transition-transform duration-300"
+              style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          )}
           语法解析
         </span>
         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
           style={{ background: "#222", color: "#555", border: "1px solid #2e2e2e" }}>
-          {line.grammarBreakdown.length} 项
+          {grammar === null ? "按需加载" : `${displayGrammar.length} 项`}
         </span>
       </button>
 
@@ -219,7 +262,7 @@ export default function LyricLineCard({
         <div className="grammar-grid-inner">
           <div className="p-4" style={{ borderTop: "1px solid #252525" }}>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-              {line.grammarBreakdown.map((unit, i) => (
+              {displayGrammar.map((unit, i) => (
                 <GrammarCard
                   key={i}
                   unit={unit}

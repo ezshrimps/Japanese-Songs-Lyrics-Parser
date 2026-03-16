@@ -225,7 +225,7 @@ export default function Home() {
       const res  = await fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lyrics: trimmed, level }),
+        body: JSON.stringify({ lyrics: trimmed }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? "解析失败，请重试");
@@ -817,6 +817,7 @@ export default function Home() {
                 activeLineIndex={activeLineIndex}
                 isPlaying={isPlaying}
                 onPlayLine={timestamps ? seekToLine : undefined}
+                level={level}
               />
 
               {/* Hidden audio element */}
