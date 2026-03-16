@@ -449,7 +449,7 @@ export default function Home() {
 
               {/* Level selector */}
               <div
-                className="flex flex-col flex-shrink-0 rounded-xl overflow-hidden"
+                className="flex flex-col flex-shrink-0 rounded-xl"
                 style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
               >
                 <div className="px-3 pt-3 pb-2 flex items-center justify-center gap-1">
