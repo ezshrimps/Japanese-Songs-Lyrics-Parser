@@ -27,6 +27,48 @@ function getTokenizer(): Promise<any> {
   });
 }
 
+// ── Lyric line pre-splitter ───────────────────────────────────────────────
+// Some input has two phrases merged on one line with a single space, e.g.:
+//   "夜に駆ける 空の向こうへ"  →  ["夜に駆ける", "空の向こうへ"]
+// Rule: split at a space only when BOTH resulting parts contain ≥ 4 Japanese
+// characters (kanji + kana). Short lines or lines where a part would be too
+// small are kept intact.
+const JP_RE = /[\u3000-\u9FFF\uF900-\uFAFF\u30A0-\u30FF\u3040-\u309F]/g;
+function countJP(s: string): number {
+  return (s.match(JP_RE) ?? []).length;
+}
+
+function trySplit(line: string): string[] {
+  const MIN_JP_PER_PART = 4;
+  const spaces: number[] = [];
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\u3000" || line[i] === " ") spaces.push(i);
+  }
+  if (spaces.length === 0) return [line];
+
+  const mid = line.length / 2;
+  const sorted = [...spaces].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+
+  for (const sp of sorted) {
+    const left  = line.slice(0, sp).trim();
+    const right = line.slice(sp + 1).trim();
+    if (countJP(left) >= MIN_JP_PER_PART && countJP(right) >= MIN_JP_PER_PART) {
+      // Recurse: each part might also need splitting
+      return [...trySplit(left), ...trySplit(right)];
+    }
+  }
+  return [line];
+}
+
+function splitMergedLines(raw: string): string {
+  const out: string[] = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed) out.push(...trySplit(trimmed));
+  }
+  return out.join("\n");
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 const KATAKANA_RE = /[\u30A1-\u30F6]/g;
 function kata2hira(text: string): string {
@@ -110,7 +152,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    const allLines = lyrics.split("\n").map((l: string) => l.trim()).filter(Boolean);
+    const allLines = splitMergedLines(lyrics).split("\n").filter(Boolean);
 
     // Deduplicate
     const uniqueLines: string[] = [];
