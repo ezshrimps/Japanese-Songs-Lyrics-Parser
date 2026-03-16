@@ -35,7 +35,7 @@ export default function LyricsDisplay({
       <div className="flex flex-col gap-4">
         {data.map((line, i) => (
           <LyricLineCard
-            key={i}
+            key={`${i}:${line.originalText}`}
             line={line}
             index={i}
             savedIds={savedIds}
