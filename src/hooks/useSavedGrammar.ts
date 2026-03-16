@@ -28,8 +28,11 @@ export function useSavedGrammar() {
 
   const save = (unit: GrammarUnit, sourceLine: string) => {
     const id = grammarId(unit);
-    if (items.some((i) => i.id === id)) return; // already saved
-    persist([{ id, unit, sourceLine, savedAt: Date.now() }, ...items]);
+    if (items.some((i) => i.id === id)) {
+      persist(items.filter((i) => i.id !== id)); // toggle off
+    } else {
+      persist([{ id, unit, sourceLine, savedAt: Date.now() }, ...items]);
+    }
   };
 
   const remove = (id: string) => persist(items.filter((i) => i.id !== id));

@@ -5,13 +5,28 @@ import { SavedLyric, SavedGrammar } from "@/types";
 
 // ── POS colour (mirrors GrammarCard) ──────────────────────────────────────
 const POS_MAP: Array<[string, string]> = [
-  ["动词", "#EEC170"], ["名词", "#F58549"], ["形容", "#F2A65A"],
-  ["副词", "#585123"], ["数词", "#772F1A"], ["助词", "#EDEDE9"],
-  ["接续", "#EEC170"], ["感叹", "#F58549"],
+  ["动词", "#4A90E8"], ["名词", "#E8634A"], ["形容", "#9B59B6"],
+  ["副词", "#27AE60"], ["数词", "#E67E22"], ["助词", "#38BCD4"],
+  ["接续", "#38BCD4"], ["感叹", "#E8634A"],
 ];
 function posColor(pos: string) {
   for (const [k, c] of POS_MAP) if (pos.includes(k)) return c;
   return "#EEC170";
+}
+
+function exportGrammarCSV(items: SavedGrammar[]) {
+  const header = ["词", "读音", "罗马字", "词性", "解释", "出处"];
+  const escape = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const rows = items.map((i) => [
+    i.unit.text, i.unit.hiragana, i.unit.romaji,
+    i.unit.partOfSpeech, i.unit.explanation, i.sourceLine,
+  ].map(escape).join(","));
+  const csv = [header.join(","), ...rows].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "grammar.csv"; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────
@@ -249,9 +264,28 @@ export default function SavedLyricsSidebar({
               <p className="text-[11px] leading-relaxed" style={{ color: "#333" }}>点击语法卡片上的星标收藏</p>
             </div>
           ) : (
-            savedGrammar.map((item) => (
-              <GrammarItem key={item.id} item={item} onDelete={() => onDeleteGrammar(item.id)} />
-            ))
+            <>
+              {/* Export button */}
+              <div className="px-3 pb-2 pt-1">
+                <button
+                  onClick={() => exportGrammarCSV(savedGrammar)}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150"
+                  style={{ background: "rgba(56,188,212,0.08)", border: "1px solid rgba(56,188,212,0.2)", color: "#38BCD4" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.15)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(56,188,212,0.08)"; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  导出 CSV ({savedGrammar.length} 条)
+                </button>
+              </div>
+              {savedGrammar.map((item) => (
+                <GrammarItem key={item.id} item={item} onDelete={() => onDeleteGrammar(item.id)} />
+              ))}
+            </>
           )
         )}
       </div>
