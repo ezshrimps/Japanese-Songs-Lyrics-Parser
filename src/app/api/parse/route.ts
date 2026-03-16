@@ -106,11 +106,31 @@ function attachKana(result: ParsedResult): ParsedResult {
   return result;
 }
 
-async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
+const LEVEL_PROMPT: Record<string, string> = {
+  "初级": "",
+  "中级": `
+Grammar level: INTERMEDIATE. Skip overly basic items — do NOT include entries for:
+- Common single particles used in standard roles: は (topic), が (subject), を (object), に (location/direction), で (means/location), も (also), の (possessive)
+- Simple pronouns and interrogatives: これ/それ/あれ/どれ, こ/そ/あ/ど series, ここ/そこ/あそこ/どこ
+- Basic copula: です、だ、である
+- Simple conjunctions: そして、でも、だから (when used standalone without special nuance)
+Focus instead on: verb conjugations and their nuance, grammar patterns, compound expressions, sentence-final forms, and any particle used with non-obvious meaning.`,
+  "高级": `
+Grammar level: ADVANCED. Only include grammar items that are N3 level or above. Skip ALL of the following:
+- All basic particles in standard usage (は、が、を、に、で、も、の、と、や、か、ね、よ)
+- All basic pronouns, demonstratives, interrogatives
+- て-form, ない-form, dictionary form, ます-form when used in straightforward conjugation
+- です/だ copula, simple い/な adjective conjugation
+- Common adverbs: とても、もっと、まだ、もう、ちょっと
+Only explain: advanced grammar patterns (passive, causative, conditionals ば/たら/と/なら, potential form nuances, te-form compounds with non-obvious meaning, formal/literary expressions, honorific/humble forms, complex compound particles like にとって/において/に関して, sentence-ending patterns expressing nuance).`,
+};
+
+async function parseBatch(batchLines: string[], level = "初级"): Promise<ParsedResult[]> {
+  const levelNote = LEVEL_PROMPT[level] ?? "";
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 32000,
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_PROMPT + levelNote,
     tools: [TOOL],
     tool_choice: { type: "tool", name: "analyze_lyrics" },
     messages: [{ role: "user", content: batchLines.join("\n") }],
@@ -141,7 +161,7 @@ async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { lyrics } = await request.json();
+    const { lyrics, level = "初级" } = await request.json();
 
     if (!lyrics || typeof lyrics !== "string" || lyrics.length > MAX_CHARS) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -171,7 +191,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[parse] ${uniqueLines.length} unique lines → ${batches.length} batch(es)`);
 
-    const batchResults = await Promise.all(batches.map(parseBatch));
+    const batchResults = await Promise.all(batches.map((b) => parseBatch(b, level)));
     const normalized = batchResults.flat();
 
     // Expand back to original order

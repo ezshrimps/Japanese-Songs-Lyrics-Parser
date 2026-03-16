@@ -147,6 +147,7 @@ export default function Home() {
   const [isAligning, setIsAligning]     = useState(false);
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [alignModel, setAlignModel]     = useState("medium");
+  const [level, setLevel]               = useState<"初级" | "中级" | "高级">("初级");
 
   // Keep ref in sync with state (avoids stale closure reads in event handlers)
   const setActiveLine = (idx: number | null) => {
@@ -223,7 +224,7 @@ export default function Home() {
       const res  = await fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lyrics: trimmed }),
+        body: JSON.stringify({ lyrics: trimmed, level }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? "解析失败，请重试");
@@ -444,8 +445,43 @@ export default function Home() {
 
           {/* ── Input card ──────────────────────────────────────────────── */}
           <form onSubmit={handleSubmit} className="mb-8">
+            <div className="flex gap-3 items-start">
+
+              {/* Level selector */}
+              <div
+                className="flex flex-col flex-shrink-0 rounded-xl overflow-hidden"
+                style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
+              >
+                <div className="px-3 pt-3 pb-2">
+                  <span className="text-[9px] font-bold tracking-widest uppercase block text-center" style={{ color: "#444" }}>
+                    水平
+                  </span>
+                </div>
+                {(["初级", "中级", "高级"] as const).map((lv) => {
+                  const active = level === lv;
+                  const colors: Record<string, string> = { "初级": "#27AE60", "中级": "#4A90E8", "高级": "#9B59B6" };
+                  const c = colors[lv];
+                  return (
+                    <button
+                      key={lv}
+                      type="button"
+                      onClick={() => setLevel(lv)}
+                      className="px-4 py-2.5 text-xs font-semibold transition-all duration-150 relative"
+                      style={{
+                        color: active ? c : "#444",
+                        background: active ? `${c}14` : "transparent",
+                        borderLeft: `2px solid ${active ? c : "transparent"}`,
+                      }}
+                    >
+                      {lv}
+                    </button>
+                  );
+                })}
+                <div className="pb-2" />
+              </div>
+
             <div
-              className="rounded-xl overflow-hidden"
+              className="flex-1 rounded-xl overflow-hidden"
               style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
             >
               <div className="px-4 pt-4 pb-1">
@@ -526,6 +562,7 @@ export default function Home() {
                 ))}
               </div>
             </div>
+            </div> {/* end flex gap-3 */}
 
             {/* Buttons row */}
             <div className="flex items-center justify-between gap-3 mt-3">
