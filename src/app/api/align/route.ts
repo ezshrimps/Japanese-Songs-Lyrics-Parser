@@ -78,7 +78,7 @@ function alignByCount(
 }
 
 // ── Log writer ─────────────────────────────────────────────────────────────
-function writeAlignLog(words: WordStamp[], details: AlignDetail[]): void {
+function writeAlignLog(words: WordStamp[], details: AlignDetail[], rawOutput?: unknown): void {
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${(s % 60).toFixed(3).padStart(6, "0")}`;
 
@@ -119,6 +119,12 @@ function writeAlignLog(words: WordStamp[], details: AlignDetail[]): void {
     );
   }
   out.push("");
+
+  if (rawOutput !== undefined) {
+    out.push("── Raw model output " + "─".repeat(59));
+    out.push(JSON.stringify(rawOutput, null, 2));
+    out.push("");
+  }
 
   const logPath = path.join(process.cwd(), "align.log");
   fs.writeFileSync(logPath, out.join("\n"), "utf8");
@@ -184,7 +190,7 @@ export async function POST(request: NextRequest) {
     const { timestamps, details } = alignByCount(allWords, kana, lines);
     console.log(`[align] mapped ${timestamps.length} / ${lines.length} lines`);
 
-    writeAlignLog(allWords, details);
+    writeAlignLog(allWords, details, output);
 
     return NextResponse.json({ timestamps });
 
