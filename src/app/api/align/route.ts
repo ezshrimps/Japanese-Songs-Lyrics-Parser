@@ -42,6 +42,7 @@ function alignByCount(
   words: WordStamp[],
   kanaLines: string[],
   originalLines: string[],
+  wordCountsPerLine: number[],   // romaji word count for each non-empty line, in order
 ): { timestamps: LineTimestamp[]; details: AlignDetail[] } {
   const nonEmpty = originalLines
     .map((text, lineIndex) => ({ text, lineIndex }))
@@ -56,9 +57,10 @@ function alignByCount(
 
   let wi = 0;
 
-  for (const { lineIndex, text } of nonEmpty) {
+  for (let ni = 0; ni < nonEmpty.length; ni++) {
+    const { lineIndex, text } = nonEmpty[ni];
+    const count = Math.max(wordCountsPerLine[ni] ?? 1, 1);
     const query = norm(kanaLines[lineIndex] ?? originalLines[lineIndex] ?? "");
-    const count = Math.max(query.length, 1);
 
     const startWi = Math.min(wi, words.length - 1);
     const endWi   = Math.min(wi + count - 1, words.length - 1);
@@ -142,19 +144,26 @@ export async function POST(request: NextRequest) {
     if (!audioFile || !lyricsRaw) {
       return NextResponse.json({ error: "Missing audio or lyrics" }, { status: 400 });
     }
-    const lines: string[] = JSON.parse(lyricsRaw);
-    const kana:  string[] = kanaRaw ? JSON.parse(kanaRaw) : [];
+    const lines:  string[] = JSON.parse(lyricsRaw);
+    const kana:   string[] = kanaRaw ? JSON.parse(kanaRaw) : [];
+    const romajiRaw = formData.get("romaji") as string | null;
+    const romaji: string[] = romajiRaw ? JSON.parse(romajiRaw) : [];
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return NextResponse.json({ error: "Invalid lyrics format" }, { status: 400 });
     }
 
-    // Build the script: each kana character as a separate space-delimited token
-    // so forced-alignment returns one timestamp per character.
-    const allChars = lines
-      .filter((line) => line.replace(/\s/g, "").length > 0)
-      .flatMap((line, i) => Array.from(norm(kana[i] ?? line)));
-    const script = allChars.join(" ");
+    // Build the script: romaji words from each non-empty line, space-delimited.
+    // Track how many romaji words each line contributes for count-based alignment.
+    const lineWordCounts: number[] = [];
+    const allWords: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].replace(/\s/g, "").length === 0) continue;
+      const words = (romaji[i] ?? "").trim().split(/\s+/).filter(Boolean);
+      lineWordCounts.push(words.length || 1);
+      allWords.push(...words);
+    }
+    const script = allWords.join(" ");
 
     const audioBlob = new Blob([await audioFile.arrayBuffer()], {
       type: audioFile.type || "audio/mpeg",
@@ -176,20 +185,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Filter to valid stamps only (model may emit null start/end for unaligned tokens)
-    const allWords: WordStamp[] = output
+    const faWords: WordStamp[] = output
       .filter((w) => typeof w.start === "number" && typeof w.end === "number")
       .map((w) => ({ word: String(w.word ?? ""), start: Number(w.start), end: Number(w.end) }));
 
-    console.log(`[align] ${allWords.length} / ${output.length} tokens with timestamps`);
+    console.log(`[align] ${faWords.length} / ${output.length} tokens with timestamps`);
 
-    if (allWords.length < 2) {
+    if (faWords.length < 2) {
       return NextResponse.json({ error: "forced-alignment: insufficient word timestamps" }, { status: 500 });
     }
 
-    const { timestamps, details } = alignByCount(allWords, kana, lines);
+    const { timestamps, details } = alignByCount(faWords, kana, lines, lineWordCounts);
     console.log(`[align] mapped ${timestamps.length} / ${lines.length} lines`);
 
-    writeAlignLog(allWords, details, output);
+    writeAlignLog(faWords, details, output);
 
     return NextResponse.json({ timestamps });
 

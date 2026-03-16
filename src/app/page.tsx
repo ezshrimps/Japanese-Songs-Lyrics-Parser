@@ -281,8 +281,9 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("audio", file);
-      formData.append("lyrics", JSON.stringify(result.map((r) => r.originalText)));
-      formData.append("kana",   JSON.stringify(result.map((r) => r.kana ?? getLineKana(r))));
+      formData.append("lyrics",  JSON.stringify(result.map((r) => r.originalText)));
+      formData.append("kana",    JSON.stringify(result.map((r) => r.kana ?? getLineKana(r))));
+      formData.append("romaji",  JSON.stringify(result.map((r) => r.fullRomaji)));
       formData.append("duration", String(actualDuration));
       formData.append("model", alignModel);
       const res  = await fetch("/api/align", { method: "POST", body: formData });
