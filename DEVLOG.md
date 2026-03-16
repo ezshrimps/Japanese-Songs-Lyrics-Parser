@@ -315,3 +315,215 @@ Each message addressed one thing: "add save functionality", "make cards wider", 
 The entire project — from blank directory to feature-complete dark-theme app — was built in a single extended conversation with Claude. No pre-written code was brought in. Every file was either generated or iterated through Claude's edits.
 
 The conversation covered: initial scaffolding → first bug fix (Tool Use migration) → multi-line support → three UI redesigns → saved lyrics feature → dark theme reconstruction → incremental visual polish.
+
+---
+
+## Phase 8: Audio Alignment — Adding Timestamps to Lyrics
+
+The next major feature: click any lyric line and hear it play from the right position in the song. This required mapping each lyric line to a `{startTime, endTime}` range in the audio.
+
+### The Core Problem
+
+Japanese alignment is hard. A forced aligner needs to know phoneme boundaries, but:
+- Japanese lyrics contain kanji (no phonetic info)
+- The reading of a kanji changes with context
+- Standard ASR models often output hiragana OR kanji inconsistently
+
+The approach chosen: **WhisperX** via Replicate (`victor-upmeet/whisperx`). WhisperX runs Whisper ASR + Montreal Forced Aligner under the hood and returns character-level word timestamps for Japanese — roughly one `{word, start, end}` entry per kana character.
+
+### Storing Kana at Parse Time
+
+To feed WhisperX a phonetic hint and to support alignment without re-parsing, I added a `kana` field to `ParsedResult`:
+
+```typescript
+interface ParsedResult {
+  originalText: string;
+  kana: string;  // normalized hiragana, stored at parse time
+  segments: Segment[];
+  // ...
+}
+```
+
+This is computed right after Claude returns the analysis, by joining `segment.hiragana ?? segment.text` and normalizing katakana → hiragana + stripping punctuation. It gets persisted in localStorage alongside the parsed result, so a saved lyric loaded weeks later can still be aligned without re-parsing.
+
+### WhisperX `initial_prompt`
+
+WhisperX has a Whisper-compatible `initial_prompt` parameter. Passing the normalized kana reading of all lyrics (joined with Japanese spaces `　`) biases the ASR output toward hiragana rather than kanji, making alignment much easier downstream:
+
+```typescript
+initial_prompt: kana.filter((_, i) => lines[i]?.trim())
+                    .map((k) => norm(k))
+                    .join("　"),
+```
+
+---
+
+## Phase 9: The Alignment Algorithm Journey
+
+Getting accurate line → timestamp mapping took several iterations.
+
+### Attempt 1: Subsequence Matching
+
+The first algorithm tried to match the kana reading of each lyric line against WhisperX's word list using subsequence search. It worked in simple cases but had a critical bug: when WhisperX misread a kanji (e.g., outputting 群れ instead of 胸), the `nextKanaChar` lookahead returned a character not present in the remaining query. A `while` loop would then exhaust the kana pointer, ending the line prematurely. Every subsequent line would cascade from the wrong start position.
+
+The fix: replace the `while` loop with `indexOf`:
+
+```typescript
+// Before (buggy — could exhaust ki):
+while (ki < query.length && query[ki] !== nk) ki++;
+
+// After (safe — skips nothing if nk not found):
+const nkIdx = nk ? query.indexOf(nk, ki) : -1;
+if (nkIdx !== -1) ki = nkIdx;
+```
+
+### Attempt 2: LLM Alignment Layer
+
+To handle kanji misreads more robustly, I added a Claude Haiku layer between WhisperX and the final timestamps. Haiku receives a compact word list (`0:あ 1:な 2:た ...`) and a lyric list, then returns `{lineIndex, startWordIdx, endWordIdx}` for each line using a `map_lyrics` tool call.
+
+This was then combined with a `snapToChar` correction function that searches ±3 words from Haiku's suggestion to find the exact word whose normalized first character matches the expected kana:
+
+```typescript
+const snapToChar = (base, target, radius, direction) => {
+  for (let d = 0; d <= radius; d++) {
+    for (const candidate of [base + d * direction, base - d * direction]) {
+      if (norm(words[candidate].word)[0] === target) return candidate;
+    }
+  }
+  return base;
+};
+```
+
+A subtle bug: both `snapToChar` calls (for start and end) needed direction `+1` (forward), because Haiku tends to be conservative and return indices slightly before the actual boundary.
+
+### Final Approach: Pure Count-Based Alignment
+
+After sufficient testing, the simplest approach proved most reliable: WhisperX with `align_output: true` outputs character-level tokens for Japanese (one word ≈ one kana character). Each lyric line simply consumes `norm(kana).length` consecutive words from the list, sequentially.
+
+```
+あいはどこからやってくるのでしょう  →  17 chars  →  words[0..16]
+じぶんのむねにといかけた            →  12 chars  →  words[17..28]
+```
+
+No LLM, no lookahead, no drift correction. Deterministic and fast.
+
+---
+
+## Phase 10: Audio Playback — Precision Matters
+
+Implementing click-to-seek playback surfaced several non-obvious bugs.
+
+### Bug 1: Segment Overshoot (~250ms)
+
+The first implementation used `timeupdate` to detect when playback crossed the segment end boundary. `timeupdate` fires every ~250ms, meaning audio could play up to a quarter-second into the next line before being stopped.
+
+Fix: replace `timeupdate` boundary detection with `setTimeout` calculated at seek time:
+
+```typescript
+const scheduleStop = (endTime: number, startedAt: number) => {
+  const remaining = (endTime - startedAt) * 1000;
+  segmentTimerRef.current = setTimeout(stopSegment, Math.max(0, remaining));
+};
+```
+
+This achieves ~1–10ms precision vs ~250ms with polling.
+
+### Bug 2: `play()` AbortError Race
+
+Calling `audio.pause()` immediately after `audio.play()` (before the Promise resolves) throws an `AbortError`. This happened when switching quickly between lines.
+
+Fix: track the in-flight `play()` Promise and always await it before pausing:
+
+```typescript
+const safePlay = async () => {
+  pendingPlayRef.current = audio.play();
+  await pendingPlayRef.current;
+  pendingPlayRef.current = null;
+};
+
+const safePause = async () => {
+  if (pendingPlayRef.current) {
+    try { await pendingPlayRef.current; } catch { /* AbortError ok */ }
+  }
+  audio.pause();
+};
+```
+
+### Bug 3: Stale Closures
+
+`isPlaying` and `activeLineIndex` state values were stale inside event handlers due to React's closure capture. Fix: mirror state into refs that event handlers read from directly:
+
+```typescript
+const activeLineRef = useRef<number | null>(null);
+const setActiveLine = (idx: number | null) => {
+  activeLineRef.current = idx;
+  setActiveLineIndex(idx);
+};
+```
+
+---
+
+## Phase 11: Forced-Alignment Experiments (Dead End)
+
+I explored replacing WhisperX with dedicated forced-alignment models that take an audio file + transcript and return precise word timestamps — potentially more accurate than ASR-based alignment.
+
+### Attempt 1: `quinten-kamphuis/forced-alignment`
+
+**Result:** Failed with `The batch dimension for log_probs must be 1 at the current version`. The model has a hard limit: it can only process a single short segment, not a full song's worth of tokens. No parameters available to work around this.
+
+### Attempt 2: `cureau/force-align-wordstamps`
+
+**Result:** Returned a single entry with an empty word and timestamps at the very end of the audio (260s). The model did not align the romaji transcript to the Japanese audio at all — likely because it doesn't support Japanese.
+
+Several transcript formats were tried: kana characters space-delimited (model returned equal-interval distribution from 00:00), then romaji words (single empty result).
+
+**Conclusion:** Both models are designed for clean speech recordings in supported languages, not music with instrumental sections and Japanese content. WhisperX remains the right tool for this use case.
+
+These experiments live in the `force-alignment` git branch for reference.
+
+---
+
+## Phase 12: Batched Parallel Parsing for Long Lyrics
+
+**Symptom:** Parsing a full song (60+ unique lines) took 271 seconds and then crashed with `(lines ?? []).map is not a function`.
+
+**Root cause:** A single Claude request for 60 lines approached the `max_tokens: 32000` limit. The response was truncated mid-JSON, and in at least one case the `lines` array was serialized as a JSON string rather than a native array — a rare but real Claude tool-use edge case.
+
+**Fix 1 — Batched parallel requests:** Split unique lines into 25-line chunks and run all batches concurrently with `Promise.all`:
+
+```typescript
+const batches: string[][] = [];
+for (let i = 0; i < uniqueLines.length; i += BATCH_SIZE) {
+  batches.push(uniqueLines.slice(i, i + BATCH_SIZE));
+}
+const batchResults = await Promise.all(batches.map(parseBatch));
+const normalized = batchResults.flat();
+```
+
+50 lines now takes the same time as 25 lines (parallel). 100 lines takes ~1/4 the original time.
+
+**Fix 2 — Defensive `lines` parsing:** With more API calls per session, the probability of hitting the JSON-string edge case increased. Added explicit type detection:
+
+```typescript
+let lines: Record<string, unknown>[];
+if (Array.isArray(rawLines)) {
+  lines = rawLines;
+} else if (typeof rawLines === "string") {
+  try { lines = JSON.parse(rawLines); } catch { lines = []; }
+} else {
+  lines = [];
+}
+```
+
+The input character limit was also raised from 5000 to 15000 to accommodate full songs.
+
+---
+
+## Branch History
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Current production version (WhisperX + batched parsing) |
+| `original` | Snapshot of the pre-alignment codebase |
+| `whisperx` | Same as main (source branch before promotion) |
+| `force-alignment` | Forced-alignment experiments — both models failed for Japanese music |
