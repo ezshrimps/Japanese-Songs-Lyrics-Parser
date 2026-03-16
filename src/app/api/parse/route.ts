@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Replicate from "replicate";
 import { NextRequest, NextResponse } from "next/server";
 import { ParsedResult } from "@/types";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 
 const BATCH_SIZE = 25; // lines per Claude request
 const MAX_CHARS  = 15000;
@@ -22,7 +22,7 @@ Grammar breakdown rules:
 - All explanations must be in Chinese and be educational
 - IMPORTANT: In explanation text, use 「」brackets for word meanings — never use ASCII double-quote characters`;
 
-const TOOL: Anthropic.Tool = {
+const TOOL = {
   name: "analyze_lyrics",
   description:
     "Analyze all lines of Japanese lyrics and return structured data for each line",
@@ -105,17 +105,21 @@ function attachKana(result: ParsedResult): ParsedResult {
   return result;
 }
 
-async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
-  const stream = client.messages.stream({
-    model: "claude-sonnet-4-6",
-    max_tokens: 32000,
-    system: SYSTEM_PROMPT,
-    tools: [TOOL],
-    tool_choice: { type: "tool", name: "analyze_lyrics" },
-    messages: [{ role: "user", content: batchLines.join("\n") }],
-  });
+interface AnthropicMessage {
+  stop_reason: string;
+  content: Array<{ type: string; id?: string; name?: string; input?: unknown }>;
+}
 
-  const message = await stream.finalMessage();
+async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
+  const message = await replicate.run("anthropic/claude-4.5-sonnet", {
+    input: {
+      system: SYSTEM_PROMPT,
+      tools: [TOOL],
+      tool_choice: { type: "tool", name: "analyze_lyrics" },
+      max_tokens: 32000,
+      messages: [{ role: "user", content: batchLines.join("\n") }],
+    },
+  }) as AnthropicMessage;
 
   if (message.stop_reason === "max_tokens") {
     throw new Error("歌词批次过长，响应被截断。");
@@ -126,7 +130,7 @@ async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
     throw new Error("No tool_use block in response");
   }
 
-  const { lines: rawLines } = toolUse.input as { lines: unknown };
+  const { lines: rawLines } = (toolUse.input ?? {}) as { lines: unknown };
   let lines: Record<string, unknown>[];
   if (Array.isArray(rawLines)) {
     lines = rawLines;
