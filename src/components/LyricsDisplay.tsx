@@ -7,12 +7,13 @@ interface Props {
   onSaveGrammar: (unit: GrammarUnit, sourceLine: string) => void;
   timestamps?: LineTimestamp[];
   activeLineIndex?: number | null;
+  isPlaying?: boolean;
   onPlayLine?: (lineIndex: number) => void;
 }
 
 export default function LyricsDisplay({
   data, savedIds, onSaveGrammar,
-  timestamps, activeLineIndex, onPlayLine,
+  timestamps, activeLineIndex, isPlaying, onPlayLine,
 }: Props) {
   const tsMap = new Map(timestamps?.map(t => [t.lineIndex, t]));
 
@@ -37,6 +38,7 @@ export default function LyricsDisplay({
             onSaveGrammar={onSaveGrammar}
             timestamp={tsMap.get(i)}
             isActive={activeLineIndex === i}
+            isLinePlaying={activeLineIndex === i && !!isPlaying}
             onPlay={onPlayLine ? () => onPlayLine(i) : undefined}
           />
         ))}

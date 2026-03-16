@@ -145,7 +145,16 @@ export async function POST(request: NextRequest) {
     }
 
     const { lines } = toolUse.input as { lines: Record<string, unknown>[] };
-    const normalized = (lines ?? []).map(normalizeLineData);
+    const normalized = (lines ?? []).map((line) => {
+      const result = normalizeLineData(line);
+      // Compute and store normalized hiragana at parse time so align can use it
+      result.kana = result.segments
+        .map((s) => s.hiragana ?? s.text)
+        .join("")
+        .replace(/[\u30A1-\u30F6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+        .replace(/[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g, "");
+      return result;
+    });
 
     // Expand back to original order, copying results for duplicate lines
     const expanded = expandMap.map((i) => normalized[i]);

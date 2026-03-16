@@ -20,24 +20,6 @@ function norm(text: string): string {
     .replace(/[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g, "");
 }
 
-/** Returns true if the character is a CJK kanji (not hiragana/katakana) */
-function isKanji(c: string): boolean {
-  const code = c.charCodeAt(0);
-  return (code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3400 && code <= 0x4dbf);
-}
-
-/**
- * From position `fromWi` onward, return the first character of the first
- * non-kanji word. Used to know where to resume kana matching after a kanji word.
- */
-function nextKanaChar(words: WordStamp[], fromWi: number): string {
-  for (let i = fromWi; i < words.length; i++) {
-    const n = norm(words[i].word);
-    if (n && !isKanji(n[0])) return n[0];
-  }
-  return "";
-}
-
 // ── Main alignment ─────────────────────────────────────────────────────────
 interface AlignDetail {
   lineIndex: number;
@@ -49,16 +31,16 @@ interface AlignDetail {
 }
 
 /**
- * Sequential scan alignment — matches kana characters one-by-one against
- * WhisperX word-level timestamps, with special handling for kanji words.
+ * Count-based alignment.
  *
- * WhisperX outputs character-level timestamps for Japanese (each "word" = 1 char).
- * For each lyric line we advance through the words array, matching kana query chars:
- *   - Exact match  → record as start/end word, advance both pointers
- *   - Kanji word   → advance kana pointer past the kanji's reading (until next kana char)
- *   - No match     → advance only the WhisperX word pointer (drift correction)
+ * WhisperX with align_output=true produces character-level stamps for Japanese
+ * (one word ≈ one kana character). Each lyric line simply consumes
+ * norm(kana).length consecutive words from the word list, sequentially.
+ *
+ * Example: あいはどこからやってくるのでしょう (17 chars) → words[0..16]
+ *          next line (N chars) → words[17..17+N-1]
  */
-function alignByKana(
+function alignByCount(
   words: WordStamp[],
   kanaLines: string[],
   originalLines: string[],
@@ -74,66 +56,24 @@ function alignByKana(
   const timestamps: LineTimestamp[] = [];
   const details: AlignDetail[] = [];
 
-  let prevLineEndWi = -1;
+  let wi = 0;
 
   for (const { lineIndex, text } of nonEmpty) {
     const query = norm(kanaLines[lineIndex] ?? originalLines[lineIndex] ?? "");
+    const count = Math.max(query.length, 1);
 
-    let wi = prevLineEndWi + 1;
-    let ki = 0;
-    let startWordIdx = -1;
-    let endWordIdx = prevLineEndWi >= 0 ? prevLineEndWi : 0;
-
-    while (wi < words.length && ki < query.length) {
-      const wNorm = norm(words[wi].word);
-      if (!wNorm) { wi++; continue; }
-
-      if (isKanji(wNorm[0])) {
-        // Kanji word: mark as end candidate, skip kana chars until next kana word's first char
-        if (startWordIdx === -1) startWordIdx = wi;
-        endWordIdx = wi;
-        const nk = nextKanaChar(words, wi + 1);
-        // Skip kana query chars that correspond to this kanji's reading.
-        // Use indexOf so that if nk is absent from the remaining query
-        // (e.g. WhisperX mis-read 胸(むね) as 群れ(むれ)), we don't
-        // exhaust ki and prematurely end the line.
-        const nkIdx = nk ? query.indexOf(nk, ki) : -1;
-        if (nkIdx !== -1) ki = nkIdx;
-        wi++;
-      } else if (wNorm[0] === query[ki]) {
-        // Exact match
-        if (startWordIdx === -1) startWordIdx = wi;
-        endWordIdx = wi;
-        wi++;
-        ki++;
-      } else {
-        // No match — advance only the WhisperX pointer to correct drift
-        wi++;
-      }
-    }
-
-    // Fallback: if nothing matched, use word right after previous line
-    if (startWordIdx === -1) {
-      startWordIdx = Math.min(prevLineEndWi + 1, words.length - 1);
-      endWordIdx = startWordIdx;
-    }
-
-    prevLineEndWi = endWordIdx;
+    const startWi = Math.min(wi, words.length - 1);
+    const endWi   = Math.min(wi + count - 1, words.length - 1);
 
     const ts: LineTimestamp = {
       lineIndex,
-      startTime: words[startWordIdx].start,
-      endTime:   words[endWordIdx].end,
+      startTime: words[startWi].start,
+      endTime:   words[endWi].end,
     };
     timestamps.push(ts);
-    details.push({
-      lineIndex,
-      text,
-      kana: query,
-      startWordIdx,
-      endWordIdx,
-      timestamp: ts,
-    });
+    details.push({ lineIndex, text, kana: query, startWordIdx: startWi, endWordIdx: endWi, timestamp: ts });
+
+    wi += count;
   }
 
   return { timestamps, details };
@@ -220,7 +160,7 @@ export async function POST(request: NextRequest) {
           language: "ja",
           align_output: true,
           batch_size: 16,
-          initial_prompt: lines.filter((l) => l.trim()).join("　"),
+          initial_prompt: kana.filter((_, i) => lines[i]?.trim()).map((k) => norm(k)).join("　"),
         },
       },
     )) as WhisperXOutput;
@@ -239,7 +179,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "whisperx: no word-level timestamps returned" }, { status: 500 });
     }
 
-    const { timestamps, details } = alignByKana(allWords, kana, lines);
+    console.log(`[align] count-aligning ${allWords.length} words → ${lines.length} lines`);
+    const { timestamps, details } = alignByCount(allWords, kana, lines);
     console.log(`[align] mapped ${timestamps.length} / ${lines.length} lines`);
 
     writeAlignLog(allWords, details);

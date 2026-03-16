@@ -30,6 +30,7 @@ export interface GrammarUnit {
 
 export interface ParsedResult {
   originalText: string;
+  kana: string;           // normalized hiragana of the full line, stored at parse time
   segments: Segment[];
   fullRomaji: string;
   chineseTranslation: string;

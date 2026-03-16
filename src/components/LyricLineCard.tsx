@@ -78,6 +78,7 @@ interface Props {
   onSaveGrammar: (unit: GrammarUnit, sourceLine: string) => void;
   timestamp?: { startTime: number; endTime: number };
   isActive?: boolean;
+  isLinePlaying?: boolean;
   onPlay?: () => void;
 }
 
@@ -86,7 +87,7 @@ const fmt = (s: number) =>
 
 export default function LyricLineCard({
   line, index = 0, savedIds, onSaveGrammar,
-  timestamp, isActive = false, onPlay,
+  timestamp, isActive = false, isLinePlaying = false, onPlay,
 }: Props) {
   const [expanded, setExpanded]       = useState(true);
   const [hoveredText, setHoveredText] = useState<string | null>(null);
@@ -150,7 +151,7 @@ export default function LyricLineCard({
               (e.currentTarget as HTMLElement).style.color = isActive ? "#EEC170" : "#555";
             }}
           >
-            {isActive ? (
+            {isLinePlaying ? (
               <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
               </svg>

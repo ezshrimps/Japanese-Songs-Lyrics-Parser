@@ -133,10 +133,12 @@ export default function Home() {
   const [progress, setProgress]         = useState(0);
   const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
   const lineCountRef                    = useRef(1);
-  const previewEndRef                   = useRef<number | null>(null);
-
   // Audio state
   const audioRef                        = useRef<HTMLAudioElement | null>(null);
+  const segmentEndRef                   = useRef<number | null>(null); // null = free play
+  const activeLineRef                   = useRef<number | null>(null); // mirrors state, stale-closure-safe
+  const pendingPlayRef                  = useRef<Promise<void> | null>(null);
+  const segmentTimerRef                 = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [audioUrl, setAudioUrl]         = useState<string | null>(null);
   const [timestamps, setTimestamps]     = useState<LineTimestamp[] | null>(null);
   const [currentTime, setCurrentTime]   = useState(0);
@@ -145,6 +147,38 @@ export default function Home() {
   const [isAligning, setIsAligning]     = useState(false);
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [alignModel, setAlignModel]     = useState("medium");
+
+  // Keep ref in sync with state (avoids stale closure reads in event handlers)
+  const setActiveLine = (idx: number | null) => {
+    activeLineRef.current = idx;
+    setActiveLineIndex(idx);
+  };
+
+  // play() that handles the returned Promise and swallows expected AbortErrors
+  const safePlay = async (): Promise<boolean> => {
+    const audio = audioRef.current;
+    if (!audio) return false;
+    try {
+      pendingPlayRef.current = audio.play();
+      await pendingPlayRef.current;
+      pendingPlayRef.current = null;
+      return true;
+    } catch (e) {
+      pendingPlayRef.current = null;
+      if ((e as Error).name !== "AbortError") console.error("[audio] play error", e);
+      return false;
+    }
+  };
+
+  // pause() that waits for any in-flight play() Promise first
+  const safePause = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (pendingPlayRef.current) {
+      try { await pendingPlayRef.current; } catch { /* AbortError ok */ }
+    }
+    audio.pause();
+  };
 
   // Progress bar animation
   useEffect(() => {
@@ -218,7 +252,8 @@ export default function Home() {
     setError(null);
     setAudioUrl(null);
     setTimestamps(null);
-    setActiveLineIndex(null);
+    setActiveLine(null);
+    segmentEndRef.current = null;
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
@@ -231,7 +266,8 @@ export default function Home() {
     setTimestamps(null);
     setCurrentTime(0);
     setIsPlaying(false);
-    setActiveLineIndex(null);
+    setActiveLine(null);
+    segmentEndRef.current = null;
     if (!result) return;
 
     const actualDuration = await new Promise<number>((resolve) => {
@@ -246,7 +282,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("audio", file);
       formData.append("lyrics", JSON.stringify(result.map((r) => r.originalText)));
-      formData.append("kana",   JSON.stringify(result.map(getLineKana)));
+      formData.append("kana",   JSON.stringify(result.map((r) => r.kana ?? getLineKana(r))));
       formData.append("duration", String(actualDuration));
       formData.append("model", alignModel);
       const res  = await fetch("/api/align", { method: "POST", body: formData });
@@ -259,37 +295,59 @@ export default function Home() {
     }
   };
 
-  // Seek to a lyric line and play only that line
-  const seekToLine = (lineIndex: number) => {
-    if (!audioRef.current || !timestamps) return;
-    const ts = timestamps.find((t) => t.lineIndex === lineIndex);
-    if (!ts) return;
-    previewEndRef.current = ts.endTime;
-    setActiveLineIndex(lineIndex);
-    audioRef.current.currentTime = ts.startTime;
-    audioRef.current.play();
+  // Stop segment playback and reset state
+  const stopSegment = () => {
+    if (segmentTimerRef.current) { clearTimeout(segmentTimerRef.current); segmentTimerRef.current = null; }
+    segmentEndRef.current = null;
+    const audio = audioRef.current;
+    if (audio && !audio.paused) audio.pause(); // onPause → setIsPlaying(false)
+    setActiveLine(null);
   };
 
-  // Sync active line to playhead; stop at line end when in preview mode
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const ct = audioRef.current.currentTime;
-    setCurrentTime(ct);
+  // Schedule automatic stop at segment end via setTimeout (precision ~1-10ms,
+  // far better than timeupdate's ~250ms polling which causes overshoot)
+  const scheduleStop = (endTime: number, startedAt: number) => {
+    if (segmentTimerRef.current) clearTimeout(segmentTimerRef.current);
+    const remaining = (endTime - startedAt) * 1000;
+    segmentTimerRef.current = setTimeout(stopSegment, Math.max(0, remaining));
+  };
 
-    // Stop playback when the previewed line ends
-    if (previewEndRef.current !== null && ct >= previewEndRef.current) {
-      audioRef.current.pause();
-      previewEndRef.current = null;
+  // Click a lyric line: play / pause / resume
+  const seekToLine = async (lineIndex: number) => {
+    const audio = audioRef.current;
+    if (!audio || !timestamps) return;
+
+    // Same line, currently playing → pause (keep highlight, cancel timer)
+    if (activeLineRef.current === lineIndex && !audio.paused) {
+      if (segmentTimerRef.current) { clearTimeout(segmentTimerRef.current); segmentTimerRef.current = null; }
+      await safePause();
       return;
     }
 
-    if (!timestamps) return;
-    let active: LineTimestamp | undefined;
-    for (const t of timestamps) {
-      if (t.startTime <= ct) active = t;
-      else break;
+    // Same line, paused mid-segment → resume + reschedule stop timer
+    if (activeLineRef.current === lineIndex && audio.paused && segmentEndRef.current !== null) {
+      const ok = await safePlay();
+      if (ok) scheduleStop(segmentEndRef.current, audio.currentTime);
+      return;
     }
-    setActiveLineIndex(active !== undefined ? active.lineIndex : null);
+
+    // Different line (or segment finished) → stop current, seek, play
+    stopSegment();
+    await safePause();
+    const ts = timestamps.find((t) => t.lineIndex === lineIndex);
+    if (!ts) return;
+    segmentEndRef.current = ts.endTime;
+    setActiveLine(lineIndex);
+    audio.currentTime = ts.startTime;
+    const ok = await safePlay();
+    if (ok) scheduleStop(ts.endTime, ts.startTime);
+  };
+
+  // timeupdate: update scrubber only; stopSegment is handled by setTimeout
+  const handleTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setCurrentTime(audio.currentTime);
   };
 
   return (
@@ -657,10 +715,15 @@ export default function Home() {
                     currentTime={currentTime}
                     duration={duration}
                     isPlaying={isPlaying}
-                    onPlayPause={() => {
+                    onPlayPause={async () => {
                       if (!audioRef.current) return;
-                      previewEndRef.current = null; // cancel line-preview mode
-                      isPlaying ? audioRef.current.pause() : audioRef.current.play();
+                      segmentEndRef.current = null; // exit segment-preview mode
+                      setActiveLine(null);
+                      if (!audioRef.current.paused) {
+                        await safePause();
+                      } else {
+                        await safePlay();
+                      }
                     }}
                     onSeek={(t) => {
                       if (!audioRef.current) return;
@@ -676,6 +739,7 @@ export default function Home() {
                 onSaveGrammar={saveGrammar}
                 timestamps={timestamps ?? undefined}
                 activeLineIndex={activeLineIndex}
+                isPlaying={isPlaying}
                 onPlayLine={timestamps ? seekToLine : undefined}
               />
 
@@ -688,7 +752,7 @@ export default function Home() {
                   onLoadedMetadata={() => { if (audioRef.current) setDuration(audioRef.current.duration); }}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
-                  onEnded={() => { setIsPlaying(false); setActiveLineIndex(null); }}
+                  onEnded={() => { segmentEndRef.current = null; setActiveLine(null); setIsPlaying(false); }}
                 />
               )}
             </>
