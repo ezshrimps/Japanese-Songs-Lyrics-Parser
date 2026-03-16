@@ -169,27 +169,42 @@ export async function POST(request: NextRequest) {
       type: audioFile.type || "audio/mpeg",
     });
 
-    console.log(`[align] forced-alignment starting — ${lines.length} lines, script length ${script.length}`);
+    console.log(`[align] force-align-wordstamps starting — ${lines.length} lines, script: "${script.slice(0, 120)}..."`);
     const output = (await replicate.run(
-      "quinten-kamphuis/forced-alignment:566a5a9530375ba0428344b66027520e83f832527bc04c5c4770cea1d3e6fcc7",
+      "cureau/force-align-wordstamps:44dedb84066ba1e00761f45c1003c5c19ed3b12ae9d42c1c1883ca4c016ffa85",
       {
         input: {
-          audio: audioBlob,
-          script,
+          audio_file: audioBlob,
+          transcript: script,
         },
       },
-    )) as FAOutput[];
+    )) as unknown;
 
-    if (!Array.isArray(output) || output.length === 0) {
-      return NextResponse.json({ error: "forced-alignment: no output returned" }, { status: 500 });
+    // Write raw output immediately so we can inspect the format
+    const rawLogPath = path.join(process.cwd(), "align.log");
+    fs.writeFileSync(rawLogPath, `RAW OUTPUT ${new Date().toISOString()}\n\n${JSON.stringify(output, null, 2)}\n`, "utf8");
+    console.log("[align] raw output written to align.log");
+
+    if (!output || (Array.isArray(output) && (output as unknown[]).length === 0)) {
+      return NextResponse.json({ error: "force-align-wordstamps: no output returned" }, { status: 500 });
     }
 
-    // Filter to valid stamps only (model may emit null start/end for unaligned tokens)
-    const faWords: WordStamp[] = output
+    // Normalize output to WordStamp[]: handle both array and object-with-words formats
+    let rawWords: FAOutput[] = [];
+    if (Array.isArray(output)) {
+      rawWords = output as FAOutput[];
+    } else if (output && typeof output === "object") {
+      const obj = output as Record<string, unknown>;
+      const arr = obj.words ?? obj.segments ?? obj.results ?? Object.values(obj)[0];
+      rawWords = Array.isArray(arr) ? arr as FAOutput[] : [];
+    }
+
+    // Filter to valid stamps only
+    const faWords: WordStamp[] = rawWords
       .filter((w) => typeof w.start === "number" && typeof w.end === "number")
       .map((w) => ({ word: String(w.word ?? ""), start: Number(w.start), end: Number(w.end) }));
 
-    console.log(`[align] ${faWords.length} / ${output.length} tokens with timestamps`);
+    console.log(`[align] ${faWords.length} / ${rawWords.length} tokens with timestamps`);
 
     if (faWords.length < 2) {
       return NextResponse.json({ error: "forced-alignment: insufficient word timestamps" }, { status: 500 });
@@ -203,10 +218,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ timestamps });
 
   } catch (error) {
-    console.error("[align] error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Alignment failed" },
-      { status: 500 },
-    );
+    console.error("[align] error:", error instanceof Error ? error.message : String(error));
+    const logPath = path.join(process.cwd(), "align.log");
+    fs.writeFileSync(logPath, `ERROR ${new Date().toISOString()}\n\n${String(error)}\n\n${error instanceof Error ? error.stack ?? "" : ""}`, "utf8");
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
