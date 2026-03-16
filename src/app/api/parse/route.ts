@@ -20,6 +20,7 @@ Grammar breakdown rules:
 - Group each line into meaningful grammatical/morphological units
 - For conjugated verbs, explain the conjugation pattern in detail
 - All explanations must be in Chinese and be educational
+- IMPORTANT: partOfSpeech must be in Simplified Chinese (简体中文), e.g. 名词、动词、助词、形容词、副词、代词、助动词、接续词 — never use Traditional Chinese characters
 - IMPORTANT: In explanation text, use 「」brackets for word meanings — never use ASCII double-quote characters`;
 
 const TOOL: Anthropic.Tool = {
