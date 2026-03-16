@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { GrammarUnit } from "@/types";
+import { consumeCredit, remaining, DAILY_LIMIT } from "@/app/api/credits/route";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -39,7 +40,25 @@ const TOOL: Anthropic.Tool = {
   },
 };
 
+function getIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
+
 export async function POST(request: NextRequest) {
+  const ip = getIp(request);
+
+  // Check credits before doing anything
+  if (remaining(ip) <= 0) {
+    return NextResponse.json(
+      { error: "今日免费额度已用完，明天再来吧 ✦" },
+      { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
+    );
+  }
+
   try {
     const { line, level = "初级" } = await request.json();
 
@@ -66,7 +85,14 @@ All explanations must be in Simplified Chinese (简体中文). Use 「」for wor
     }
 
     const { units } = toolUse.input as { units: GrammarUnit[] };
-    return NextResponse.json({ units: Array.isArray(units) ? units : [] });
+
+    // Deduct credit after successful generation
+    const left = consumeCredit(ip);
+
+    return NextResponse.json(
+      { units: Array.isArray(units) ? units : [] },
+      { headers: { "X-Credits-Remaining": String(left), "X-Credits-Limit": String(DAILY_LIMIT) } }
+    );
   } catch (error) {
     console.error("Grammar error:", error);
     return NextResponse.json({ error: "语法解析失败" }, { status: 500 });

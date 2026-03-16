@@ -10,11 +10,14 @@ interface Props {
   isPlaying?: boolean;
   onPlayLine?: (lineIndex: number) => void;
   level?: string;
+  creditsRemaining?: number;
+  onCreditsChange?: (n: number) => void;
 }
 
 export default function LyricsDisplay({
   data, savedIds, onSaveGrammar,
   timestamps, activeLineIndex, isPlaying, onPlayLine, level,
+  creditsRemaining, onCreditsChange,
 }: Props) {
   const tsMap = new Map(timestamps?.map(t => [t.lineIndex, t]));
 
@@ -42,6 +45,8 @@ export default function LyricsDisplay({
             isLinePlaying={activeLineIndex === i && !!isPlaying}
             onPlay={onPlayLine ? () => onPlayLine(i) : undefined}
             level={level}
+            creditsRemaining={creditsRemaining}
+            onCreditsChange={onCreditsChange}
           />
         ))}
       </div>

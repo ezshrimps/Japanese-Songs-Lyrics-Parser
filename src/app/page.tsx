@@ -148,6 +148,7 @@ export default function Home() {
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [alignModel, setAlignModel]     = useState("medium");
   const [level, setLevel]               = useState<"初级" | "中级" | "高级">("中级");
+  const [credits, setCredits]           = useState<number | null>(null);
 
   // Keep ref in sync with state (avoids stale closure reads in event handlers)
   const setActiveLine = (idx: number | null) => {
@@ -211,6 +212,11 @@ export default function Home() {
 
   const [currentSavedId, setCurrentSavedId] = useState<string | null>(null);
   const { saved, save, remove, rename, togglePin, updateTimestamps } = useSavedLyrics();
+
+  // Fetch credits on mount
+  useEffect(() => {
+    fetch("/api/credits").then(r => r.json()).then(d => setCredits(d.remaining ?? null)).catch(() => {});
+  }, []);
   const { savedGrammar, savedIds, save: saveGrammar, remove: removeGrammar } = useSavedGrammar();
 
   // Parse
@@ -377,7 +383,23 @@ export default function Home() {
           </span>
         </div>
 
-        <div style={{ width: 32 }} />
+        {/* Credits indicator */}
+        {credits !== null && (
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+            style={{
+              background: credits <= 3 ? "rgba(232,99,74,0.1)" : "rgba(238,193,112,0.08)",
+              border: `1px solid ${credits <= 3 ? "rgba(232,99,74,0.25)" : "rgba(238,193,112,0.2)"}`,
+              color: credits <= 3 ? "#E8634A" : "#EEC170",
+            }}
+            title="每日免费AI语法解析积分（每行消耗1积分）"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+            </svg>
+            {credits} / 20
+          </div>
+        )}
       </header>
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
@@ -818,6 +840,8 @@ export default function Home() {
                 isPlaying={isPlaying}
                 onPlayLine={timestamps ? seekToLine : undefined}
                 level={level}
+                creditsRemaining={credits ?? undefined}
+                onCreditsChange={setCredits}
               />
 
               {/* Hidden audio element */}

@@ -90,6 +90,8 @@ interface Props {
   isLinePlaying?: boolean;
   onPlay?: () => void;
   level?: string;
+  creditsRemaining?: number;
+  onCreditsChange?: (n: number) => void;
 }
 
 const fmt = (s: number) =>
@@ -98,6 +100,7 @@ const fmt = (s: number) =>
 export default function LyricLineCard({
   line, index = 0, savedIds, onSaveGrammar,
   timestamp, isActive = false, isLinePlaying = false, onPlay, level = "中级",
+  creditsRemaining, onCreditsChange,
 }: Props) {
   const [expanded, setExpanded]         = useState(false);
   const [hoveredText, setHoveredText]   = useState<string | null>(null);
@@ -106,10 +109,14 @@ export default function LyricLineCard({
     line.grammarBreakdown.length > 0 ? line.grammarBreakdown : null
   );
   const [grammarLoading, setGrammarLoading] = useState(false);
+  const [grammarError, setGrammarError] = useState<string | null>(null);
+
+  const noCredits = creditsRemaining !== undefined && creditsRemaining <= 0 && grammar === null;
 
   const loadGrammar = async () => {
-    if (grammar !== null || grammarLoading) return;
+    if (grammar !== null || grammarLoading || noCredits) return;
     setGrammarLoading(true);
+    setGrammarError(null);
     try {
       const res = await fetch("/api/grammar", {
         method: "POST",
@@ -117,6 +124,14 @@ export default function LyricLineCard({
         body: JSON.stringify({ line: line.originalText, level }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        setGrammarError(data.error ?? "今日额度已用完");
+        setGrammar([]);
+        onCreditsChange?.(0);
+        return;
+      }
+      const left = res.headers.get("X-Credits-Remaining");
+      if (left !== null) onCreditsChange?.(Number(left));
       setGrammar(Array.isArray(data.units) ? data.units : []);
     } catch {
       setGrammar([]);
@@ -126,9 +141,13 @@ export default function LyricLineCard({
   };
 
   const handleToggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next) loadGrammar();
+    if (grammar !== null) {
+      setExpanded((v) => !v);
+      return;
+    }
+    if (noCredits) return;
+    setExpanded(true);
+    loadGrammar();
   };
 
   const displayGrammar = grammar ?? [];
@@ -233,29 +252,68 @@ export default function LyricLineCard({
       </div>
 
       {/* ── Grammar toggle ──────────────────────────────────────────────── */}
-      <button
-        onClick={handleToggle}
-        className="w-full flex items-center justify-between px-5 py-2.5 transition-colors duration-150"
-        style={{ borderTop: "1px solid #2a2a2a", background: "transparent" }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#222"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-      >
-        <span className="flex items-center gap-2 text-xs font-medium" style={{ color: "#555" }}>
-          {grammarLoading ? <Spinner /> : (
+      {/* ── Grammar toggle button ──────────────────────────────────────── */}
+      {grammar === null ? (
+        /* Not yet loaded — show "spend credit" CTA */
+        <button
+          onClick={handleToggle}
+          disabled={grammarLoading || noCredits}
+          className="w-full flex items-center justify-between px-5 py-3 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            borderTop: "1px solid #2a2a2a",
+            background: noCredits ? "transparent" : "transparent",
+          }}
+          onMouseEnter={(e) => {
+            if (!noCredits && !grammarLoading)
+              (e.currentTarget as HTMLElement).style.background = "rgba(238,193,112,0.04)";
+          }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+        >
+          <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: noCredits ? "#444" : "#EEC170" }}>
+            {grammarLoading ? <Spinner /> : (
+              /* Sparkle icon */
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+              </svg>
+            )}
+            {grammarLoading ? "AI 解析中…" : noCredits ? "今日积分已用完" : "AI 解析语法"}
+          </span>
+          {!noCredits && !grammarLoading && (
+            <span
+              className="flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: "rgba(238,193,112,0.12)", color: "#EEC170", border: "1px solid rgba(238,193,112,0.25)" }}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+              </svg>
+              −1 积分
+            </span>
+          )}
+        </button>
+      ) : (
+        /* Already loaded — plain chevron toggle */
+        <button
+          onClick={handleToggle}
+          className="w-full flex items-center justify-between px-5 py-2.5 transition-colors duration-150"
+          style={{ borderTop: "1px solid #2a2a2a", background: "transparent" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#222"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+        >
+          <span className="flex items-center gap-2 text-xs font-medium" style={{ color: "#555" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
               className="transition-transform duration-300"
               style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
             >
               <polyline points="6 9 12 15 18 9" />
             </svg>
-          )}
-          语法解析
-        </span>
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-          style={{ background: "#222", color: "#555", border: "1px solid #2e2e2e" }}>
-          {grammar === null ? "按需加载" : `${displayGrammar.length} 项`}
-        </span>
-      </button>
+            语法解析
+          </span>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+            style={{ background: "#222", color: "#555", border: "1px solid #2e2e2e" }}>
+            {grammarError ? "额度已用完" : `${displayGrammar.length} 项`}
+          </span>
+        </button>
+      )}
 
       {/* ── Grammar grid ─────────────────────────────────────────────────── */}
       <div className={`grammar-grid-wrapper ${expanded ? "open" : "closed"}`} aria-hidden={!expanded}>
