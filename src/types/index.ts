@@ -35,3 +35,9 @@ export interface ParsedResult {
   chineseTranslation: string;
   grammarBreakdown: GrammarUnit[];
 }
+
+export interface LineTimestamp {
+  lineIndex: number;
+  startTime: number;
+  endTime: number;
+}

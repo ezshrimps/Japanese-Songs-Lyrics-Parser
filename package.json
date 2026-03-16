@@ -11,7 +11,8 @@
     "@anthropic-ai/sdk": "latest",
     "next": "^15.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "replicate": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

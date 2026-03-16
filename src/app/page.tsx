@@ -5,7 +5,7 @@ import LyricsDisplay from "@/components/LyricsDisplay";
 import SavedLyricsSidebar from "@/components/SavedLyricsSidebar";
 import { useSavedLyrics } from "@/hooks/useSavedLyrics";
 import { useSavedGrammar } from "@/hooks/useSavedGrammar";
-import { ParsedResult } from "@/types";
+import { ParsedResult, LineTimestamp } from "@/types";
 
 const EXAMPLES = [
   "事が一つ二つ浮いているけど",
@@ -15,6 +15,16 @@ const EXAMPLES = [
 ];
 
 const MAX_CHARS = 5000;
+
+// ── Kana helpers ──────────────────────────────────────────────────────────
+function toHiragana(text: string): string {
+  return text.replace(/[\u30A1-\u30F6]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) - 0x60),
+  );
+}
+function getLineKana(line: import("@/types").ParsedResult): string {
+  return toHiragana(line.segments.map((s) => s.hiragana ?? s.text).join(""));
+}
 
 // ── Spinner ────────────────────────────────────────────────────────────────
 function Spinner() {
@@ -41,6 +51,77 @@ function IconPanel({ open }: { open: boolean }) {
   );
 }
 
+// ── Audio Player ──────────────────────────────────────────────────────────
+const fmtTime = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function AudioPlayer({
+  currentTime, duration, isPlaying,
+  onPlayPause, onSeek,
+}: {
+  currentTime: number; duration: number; isPlaying: boolean;
+  onPlayPause: () => void; onSeek: (t: number) => void;
+}) {
+  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  return (
+    <div
+      className="rounded-xl flex items-center gap-3 px-4 py-2.5 animate-fade-in"
+      style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
+    >
+      {/* Play/Pause */}
+      <button
+        onClick={onPlayPause}
+        className="flex items-center justify-center rounded-md flex-shrink-0 transition-all duration-150"
+        style={{
+          width: 32, height: 32,
+          background: "rgba(238,193,112,0.12)",
+          border: "1px solid rgba(238,193,112,0.3)",
+          color: "#EEC170",
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(238,193,112,0.2)"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(238,193,112,0.12)"; }}
+      >
+        {isPlaying ? (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5,3 19,12 5,21" />
+          </svg>
+        )}
+      </button>
+
+      {/* Time */}
+      <span className="text-[11px] font-mono flex-shrink-0" style={{ color: "#666", minWidth: 36 }}>
+        {fmtTime(currentTime)}
+      </span>
+
+      {/* Seek bar */}
+      <div className="flex-1 relative h-1 rounded-full" style={{ background: "#2e2e2e" }}>
+        <div
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${pct}%`,
+            background: "linear-gradient(90deg, #E8634A, #EEC170)",
+          }}
+        />
+        <input
+          type="range" min={0} max={duration || 1} step={0.1} value={currentTime}
+          onChange={(e) => onSeek(Number(e.target.value))}
+          className="absolute inset-0 w-full opacity-0 cursor-pointer"
+          style={{ height: "100%" }}
+        />
+      </div>
+
+      {/* Duration */}
+      <span className="text-[11px] font-mono flex-shrink-0" style={{ color: "#444", minWidth: 36, textAlign: "right" }}>
+        {fmtTime(duration)}
+      </span>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function Home() {
   const [lyrics, setLyrics]             = useState("");
@@ -51,6 +132,19 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen]   = useState(true);
   const [progress, setProgress]         = useState(0);
   const intervalRef                     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lineCountRef                    = useRef(1);
+  const previewEndRef                   = useRef<number | null>(null);
+
+  // Audio state
+  const audioRef                        = useRef<HTMLAudioElement | null>(null);
+  const [audioUrl, setAudioUrl]         = useState<string | null>(null);
+  const [timestamps, setTimestamps]     = useState<LineTimestamp[] | null>(null);
+  const [currentTime, setCurrentTime]   = useState(0);
+  const [duration, setDuration]         = useState(0);
+  const [isPlaying, setIsPlaying]       = useState(false);
+  const [isAligning, setIsAligning]     = useState(false);
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+  const [alignModel, setAlignModel]     = useState("medium");
 
   // Progress bar animation
   useEffect(() => {
@@ -59,8 +153,8 @@ export default function Home() {
       const startTime = Date.now();
       intervalRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
-        // Exponential ease-out: fast start, asymptotes toward 90%
-        setProgress(90 * (1 - Math.exp(-elapsed / 9000)));
+        const tau = Math.max(5000, lineCountRef.current * 2000);
+        setProgress(90 * (1 - Math.exp(-elapsed / tau)));
       }, 80);
     } else {
       if (intervalRef.current) {
@@ -88,6 +182,7 @@ export default function Home() {
     e.preventDefault();
     const trimmed = lyrics.trim();
     if (!trimmed || isLoading) return;
+    lineCountRef.current = trimmed.split("\n").filter((l) => l.trim()).length;
     setIsLoading(true);
     setError(null);
     try {
@@ -121,6 +216,80 @@ export default function Home() {
     setLyrics(item.content);
     setResult(item.parsedResult ?? null);
     setError(null);
+    setAudioUrl(null);
+    setTimestamps(null);
+    setActiveLineIndex(null);
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+  };
+
+  // Audio: upload MP3 + call align API
+  const handleAudioFile = async (file: File) => {
+    const url = URL.createObjectURL(file);
+    setAudioUrl(url);
+    setTimestamps(null);
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setActiveLineIndex(null);
+    if (!result) return;
+
+    const actualDuration = await new Promise<number>((resolve) => {
+      const tmp = new Audio();
+      tmp.onloadedmetadata = () => resolve(isFinite(tmp.duration) ? tmp.duration : 240);
+      tmp.onerror = () => resolve(240);
+      tmp.src = url;
+    });
+
+    setIsAligning(true);
+    try {
+      const formData = new FormData();
+      formData.append("audio", file);
+      formData.append("lyrics", JSON.stringify(result.map((r) => r.originalText)));
+      formData.append("kana",   JSON.stringify(result.map(getLineKana)));
+      formData.append("duration", String(actualDuration));
+      formData.append("model", alignModel);
+      const res  = await fetch("/api/align", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok && data.timestamps) setTimestamps(data.timestamps);
+    } catch (err) {
+      console.error("Align error:", err);
+    } finally {
+      setIsAligning(false);
+    }
+  };
+
+  // Seek to a lyric line and play only that line
+  const seekToLine = (lineIndex: number) => {
+    if (!audioRef.current || !timestamps) return;
+    const ts = timestamps.find((t) => t.lineIndex === lineIndex);
+    if (!ts) return;
+    previewEndRef.current = ts.endTime;
+    setActiveLineIndex(lineIndex);
+    audioRef.current.currentTime = ts.startTime;
+    audioRef.current.play();
+  };
+
+  // Sync active line to playhead; stop at line end when in preview mode
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) return;
+    const ct = audioRef.current.currentTime;
+    setCurrentTime(ct);
+
+    // Stop playback when the previewed line ends
+    if (previewEndRef.current !== null && ct >= previewEndRef.current) {
+      audioRef.current.pause();
+      previewEndRef.current = null;
+      return;
+    }
+
+    if (!timestamps) return;
+    let active: LineTimestamp | undefined;
+    for (const t of timestamps) {
+      if (t.startTime <= ct) active = t;
+      else break;
+    }
+    setActiveLineIndex(active !== undefined ? active.lineIndex : null);
   };
 
   return (
@@ -135,7 +304,6 @@ export default function Home() {
           borderBottom: "1px solid #2e2e2e",
         }}
       >
-        {/* Logo */}
         <div className="flex items-center gap-2.5">
           <span style={{ color: "#E8634A", fontSize: "18px", lineHeight: 1 }}>♪</span>
           <span className="font-semibold text-base" style={{ color: "#f0f0f0" }}>
@@ -143,7 +311,6 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Sidebar toggle */}
         <button
           onClick={() => setSidebarOpen((v) => !v)}
           title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
@@ -168,7 +335,7 @@ export default function Home() {
         </button>
       </header>
 
-      {/* ── Sidebar (fixed, slides with translateX) ───────────────────────── */}
+      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <div
         className="fixed left-0 z-40 transition-transform duration-300"
         style={{
@@ -223,7 +390,6 @@ export default function Home() {
               className="rounded-xl overflow-hidden"
               style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
             >
-              {/* Label */}
               <div className="px-4 pt-4 pb-1">
                 <span
                   className="text-[10px] font-bold tracking-widest uppercase"
@@ -233,7 +399,6 @@ export default function Home() {
                 </span>
               </div>
 
-              {/* Textarea with char counter */}
               <div className="relative">
                 <textarea
                   value={lyrics}
@@ -257,7 +422,6 @@ export default function Home() {
                     }
                   }}
                 />
-                {/* Char counter */}
                 <span
                   className="absolute bottom-2 right-3 text-[10px] font-mono pointer-events-none"
                   style={{
@@ -268,7 +432,6 @@ export default function Home() {
                 </span>
               </div>
 
-              {/* Example chips */}
               <div
                 className="px-4 pb-4 flex flex-wrap gap-2 items-center"
                 style={{ borderTop: "1px solid #252525" }}
@@ -306,9 +469,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Buttons row — ghost save (left) · coral parse (right) */}
+            {/* Buttons row */}
             <div className="flex items-center justify-between gap-3 mt-3">
-              {/* Save */}
               <button
                 type="button"
                 onClick={handleSave}
@@ -351,7 +513,6 @@ export default function Home() {
                 )}
               </button>
 
-              {/* Parse */}
               <button
                 type="submit"
                 disabled={isLoading || !lyrics.trim()}
@@ -369,10 +530,7 @@ export default function Home() {
                 }}
               >
                 {isLoading ? (
-                  <>
-                    <Spinner />
-                    解析中……
-                  </>
+                  <><Spinner />解析中……</>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -385,36 +543,25 @@ export default function Home() {
               </button>
             </div>
 
-            {/* ── Progress bar ────────────────────────────────────────── */}
+            {/* Progress bar */}
             {progress > 0 && (
               <div className="mt-4 animate-fade-in">
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-[11px]" style={{ color: "#666" }}>
-                    {progress < 30
-                      ? "正在分析歌词…"
-                      : progress < 65
-                      ? "正在解析语法…"
-                      : progress < 100
-                      ? "即将完成…"
-                      : "解析完成 ✓"}
+                    {progress < 30 ? "正在分析歌词…" : progress < 65 ? "正在解析语法…" : progress < 100 ? "即将完成…" : "解析完成 ✓"}
                   </span>
                   <span className="text-[11px] font-mono" style={{ color: "#f0956c" }}>
                     {Math.round(progress)}%
                   </span>
                 </div>
-                <div
-                  className="rounded-full overflow-hidden"
-                  style={{ height: 3, background: "#1e1e1e" }}
-                >
+                <div className="rounded-full overflow-hidden" style={{ height: 3, background: "#1e1e1e" }}>
                   <div
                     className="h-full rounded-full"
                     style={{
                       width: `${progress}%`,
                       background: "linear-gradient(90deg, #772F1A, #E8634A, #f0956c, #EEC170)",
                       boxShadow: "0 0 6px rgba(240,149,108,0.45)",
-                      transition: progress === 100
-                        ? "width 0.3s ease"
-                        : "width 0.12s linear",
+                      transition: progress === 100 ? "width 0.3s ease" : "width 0.12s linear",
                     }}
                   />
                 </div>
@@ -442,7 +589,110 @@ export default function Home() {
           )}
 
           {/* ── Results ─────────────────────────────────────────────────── */}
-          {result && <LyricsDisplay data={result} savedIds={savedIds} onSaveGrammar={saveGrammar} />}
+          {result && (
+            <>
+              {/* Audio upload + player */}
+              <div className="mb-5 flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  {/* Model selector */}
+                  <select
+                    value={alignModel}
+                    onChange={(e) => setAlignModel(e.target.value)}
+                    disabled={isAligning}
+                    className="text-xs rounded-lg px-2 py-2 outline-none cursor-pointer disabled:opacity-40"
+                    style={{ background: "#171717", border: "1px solid #2e2e2e", color: "#666" }}
+                  >
+                    <option value="tiny">tiny · 最快</option>
+                    <option value="base">base · 快</option>
+                    <option value="small">small · 均衡</option>
+                    <option value="medium">medium · 推荐</option>
+                    <option value="large-v2">large-v2 · 最准</option>
+                  </select>
+
+                  {/* Upload button */}
+                  <label
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150 flex-shrink-0"
+                    style={{
+                      background: "transparent",
+                      border: "1px solid #2e2e2e",
+                      color: audioUrl ? "#EEC170" : "#555",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#444";
+                      (e.currentTarget as HTMLElement).style.color = "#aaa";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.borderColor = "#2e2e2e";
+                      (e.currentTarget as HTMLElement).style.color = audioUrl ? "#EEC170" : "#555";
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M9 18V5l12-2v13" />
+                      <circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                    </svg>
+                    {isAligning ? "对位中…" : audioUrl ? "重新上传音频" : "上传音频对位"}
+                    <input
+                      type="file" accept="audio/*" className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAudioFile(f); e.target.value = ""; }}
+                    />
+                  </label>
+
+                  {isAligning && (
+                    <span className="text-[11px] flex items-center gap-1.5" style={{ color: "#666" }}>
+                      <Spinner />
+                      正在对位歌词…
+                    </span>
+                  )}
+
+                  {timestamps && !isAligning && (
+                    <span className="text-[11px]" style={{ color: "#585123" }}>
+                      ✓ 已对位 {timestamps.length} 行
+                    </span>
+                  )}
+                </div>
+
+                {/* Audio player */}
+                {audioUrl && (
+                  <AudioPlayer
+                    currentTime={currentTime}
+                    duration={duration}
+                    isPlaying={isPlaying}
+                    onPlayPause={() => {
+                      if (!audioRef.current) return;
+                      previewEndRef.current = null; // cancel line-preview mode
+                      isPlaying ? audioRef.current.pause() : audioRef.current.play();
+                    }}
+                    onSeek={(t) => {
+                      if (!audioRef.current) return;
+                      audioRef.current.currentTime = t;
+                    }}
+                  />
+                )}
+              </div>
+
+              <LyricsDisplay
+                data={result}
+                savedIds={savedIds}
+                onSaveGrammar={saveGrammar}
+                timestamps={timestamps ?? undefined}
+                activeLineIndex={activeLineIndex}
+                onPlayLine={timestamps ? seekToLine : undefined}
+              />
+
+              {/* Hidden audio element */}
+              {audioUrl && (
+                <audio
+                  ref={audioRef}
+                  src={audioUrl}
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={() => { if (audioRef.current) setDuration(audioRef.current.duration); }}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onEnded={() => { setIsPlaying(false); setActiveLineIndex(null); }}
+                />
+              )}
+            </>
+          )}
 
           <div className="h-16" />
         </main>
