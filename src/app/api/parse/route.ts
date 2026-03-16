@@ -4,6 +4,9 @@ import { ParsedResult } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const BATCH_SIZE = 25; // lines per Claude request
+const MAX_CHARS  = 15000;
+
 const SYSTEM_PROMPT = `You are a Japanese language expert specializing in song lyric analysis for Chinese-speaking learners.
 
 The user will provide Japanese song lyrics (one or more lines). Analyze EVERY non-empty line and return one entry per line in the "lines" array using the analyze_lyrics tool.
@@ -84,37 +87,64 @@ const TOOL: Anthropic.Tool = {
 };
 
 function normalizeLineData(line: Record<string, unknown>): ParsedResult {
-  // Defensive: Claude occasionally serializes array fields as JSON strings
   for (const key of ["segments", "grammarBreakdown"] as const) {
     if (typeof line[key] === "string") {
-      try {
-        line[key] = JSON.parse(line[key] as string);
-      } catch {
-        line[key] = [];
-      }
+      try { line[key] = JSON.parse(line[key] as string); }
+      catch { line[key] = []; }
     }
   }
   return line as unknown as ParsedResult;
+}
+
+function attachKana(result: ParsedResult): ParsedResult {
+  result.kana = (result.segments ?? [])
+    .map((s) => s.hiragana ?? s.text)
+    .join("")
+    .replace(/[\u30A1-\u30F6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g, "");
+  return result;
+}
+
+async function parseBatch(batchLines: string[]): Promise<ParsedResult[]> {
+  const stream = client.messages.stream({
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
+    system: SYSTEM_PROMPT,
+    tools: [TOOL],
+    tool_choice: { type: "tool", name: "analyze_lyrics" },
+    messages: [{ role: "user", content: batchLines.join("\n") }],
+  });
+
+  const message = await stream.finalMessage();
+
+  if (message.stop_reason === "max_tokens") {
+    throw new Error("歌词批次过长，响应被截断。");
+  }
+
+  const toolUse = message.content.find((c) => c.type === "tool_use");
+  if (!toolUse || toolUse.type !== "tool_use") {
+    throw new Error("No tool_use block in response");
+  }
+
+  const { lines } = toolUse.input as { lines: Record<string, unknown>[] };
+  return (lines ?? []).map((line) => attachKana(normalizeLineData(line)));
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { lyrics } = await request.json();
 
-    if (!lyrics || typeof lyrics !== "string" || lyrics.length > 5000) {
+    if (!lyrics || typeof lyrics !== "string" || lyrics.length > MAX_CHARS) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    // Filter out blank lines
-    const allLines = lyrics
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    // Filter blank lines
+    const allLines = lyrics.split("\n").map((l) => l.trim()).filter(Boolean);
 
-    // Deduplicate: track first-occurrence index for each unique line
+    // Deduplicate
     const uniqueLines: string[] = [];
     const lineToIdx = new Map<string, number>();
-    const expandMap: number[] = []; // allLines[i] → index in uniqueLines
+    const expandMap: number[] = [];
 
     for (const line of allLines) {
       if (!lineToIdx.has(line)) {
@@ -124,39 +154,18 @@ export async function POST(request: NextRequest) {
       expandMap.push(lineToIdx.get(line)!);
     }
 
-    const stream = client.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 32000,
-      system: SYSTEM_PROMPT,
-      tools: [TOOL],
-      tool_choice: { type: "tool", name: "analyze_lyrics" },
-      messages: [{ role: "user", content: uniqueLines.join("\n") }],
-    });
-
-    const message = await stream.finalMessage();
-
-    if (message.stop_reason === "max_tokens") {
-      throw new Error("歌词过长，响应被截断。请减少行数后重试。");
+    // Split into batches and parse in parallel
+    const batches: string[][] = [];
+    for (let i = 0; i < uniqueLines.length; i += BATCH_SIZE) {
+      batches.push(uniqueLines.slice(i, i + BATCH_SIZE));
     }
 
-    const toolUse = message.content.find((c) => c.type === "tool_use");
-    if (!toolUse || toolUse.type !== "tool_use") {
-      throw new Error("No tool_use block in response");
-    }
+    console.log(`[parse] ${uniqueLines.length} unique lines → ${batches.length} batch(es)`);
 
-    const { lines } = toolUse.input as { lines: Record<string, unknown>[] };
-    const normalized = (lines ?? []).map((line) => {
-      const result = normalizeLineData(line);
-      // Compute and store normalized hiragana at parse time so align can use it
-      result.kana = (result.segments ?? [])
-        .map((s) => s.hiragana ?? s.text)
-        .join("")
-        .replace(/[\u30A1-\u30F6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
-        .replace(/[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g, "");
-      return result;
-    });
+    const batchResults = await Promise.all(batches.map(parseBatch));
+    const normalized = batchResults.flat();
 
-    // Expand back to original order, copying results for duplicate lines
+    // Expand back to original order
     const expanded = expandMap.map((i) => normalized[i]);
 
     return NextResponse.json(expanded);
