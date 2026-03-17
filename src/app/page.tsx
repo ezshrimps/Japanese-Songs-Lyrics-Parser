@@ -121,7 +121,6 @@ export default function Home() {
   const [isAligning, setIsAligning]     = useState(false);
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const [alignModel, setAlignModel]     = useState("medium");
-  const [level, setLevel]               = useState<"初级" | "中级" | "高级">("中级");
   const [credits, setCredits]           = useState<number | null>(null);
   const [inputModalOpen, setInputModalOpen] = useState(false);
   const [showWelcome, setShowWelcome]       = useState(false);
@@ -183,7 +182,7 @@ export default function Home() {
   }, [isLoading]);
 
   const [currentSavedId, setCurrentSavedId] = useState<string | null>(null);
-  const { saved, save, remove, rename, togglePin, updateTimestamps } = useSavedLyrics();
+  const { saved, save, remove, rename, togglePin, updateTimestamps, updateParsedResult } = useSavedLyrics();
 
   useEffect(() => {
     fetch("/api/credits").then(r => r.json()).then(d => setCredits(d.remaining ?? null)).catch(() => {});
@@ -330,65 +329,6 @@ export default function Home() {
   const formContent = (
     <form onSubmit={handleSubmit}>
       <div className="flex gap-3 items-start">
-        {/* Level selector */}
-        <div
-          className="flex flex-col flex-shrink-0 rounded-xl"
-          style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
-        >
-          <div className="px-3 pt-3 pb-2 flex items-center justify-center gap-1">
-            <div className="relative group/tip">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#444", cursor: "default", flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-              </svg>
-              <div
-                className="absolute z-50 pointer-events-none opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150"
-                style={{
-                  left: "50%", bottom: "calc(100% + 6px)",
-                  transform: "translateX(-50%)",
-                  width: 180,
-                  background: "#1e1e1e",
-                  border: "1px solid #333",
-                  borderRadius: 8,
-                  padding: "8px 10px",
-                  fontSize: 11,
-                  lineHeight: 1.6,
-                  color: "#aaa",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-                }}
-              >
-                根据你的日语水平决定语法解析的深度。<br />
-                <span style={{ color: "#27AE60" }}>初级</span>：解析所有语法包括基础助词。<br />
-                <span style={{ color: "#4A90E8" }}>中级</span>：跳过常见助词，聚焦句型变化。<span style={{ color: "#4A90E8" }}>（推荐）</span><br />
-                <span style={{ color: "#9B59B6" }}>高级</span>：仅解析 N3 以上复杂语法。
-              </div>
-            </div>
-            <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: "#444" }}>
-              水平
-            </span>
-          </div>
-          {(["初级", "中级", "高级"] as const).map((lv) => {
-            const active = level === lv;
-            const colors: Record<string, string> = { "初级": "#27AE60", "中级": "#4A90E8", "高级": "#9B59B6" };
-            const c = colors[lv];
-            return (
-              <button
-                key={lv}
-                type="button"
-                onClick={() => setLevel(lv)}
-                className="px-4 py-2.5 text-xs font-semibold transition-all duration-150 relative"
-                style={{
-                  color: active ? c : "#444",
-                  background: active ? `${c}14` : "transparent",
-                  borderLeft: `2px solid ${active ? c : "transparent"}`,
-                }}
-              >
-                {lv}
-              </button>
-            );
-          })}
-          <div className="pb-2" />
-        </div>
-
         <div
           className="flex-1 rounded-xl overflow-hidden"
           style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
@@ -804,9 +744,20 @@ export default function Home() {
                 activeLineIndex={activeLineIndex}
                 isPlaying={isPlaying}
                 onPlayLine={timestamps ? seekToLine : undefined}
-                level={level}
                 creditsRemaining={credits ?? undefined}
                 onCreditsChange={setCredits}
+                onGrammarLoaded={(idx, units, translation) => {
+                  setResult(prev => {
+                    if (!prev) return prev;
+                    const next = prev.map((line, i) => i === idx ? {
+                      ...line,
+                      grammarBreakdown: units,
+                      ...(translation ? { chineseTranslation: translation } : {}),
+                    } : line);
+                    if (currentSavedId) updateParsedResult(currentSavedId, next);
+                    return next;
+                  });
+                }}
               />
 
               {audioUrl && (

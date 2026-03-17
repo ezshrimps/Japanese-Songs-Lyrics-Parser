@@ -52,11 +52,14 @@ export function useSavedLyrics() {
   const updateTimestamps = (id: string, timestamps: LineTimestamp[]) =>
     persist(items.map((i) => (i.id === id ? { ...i, timestamps } : i)));
 
+  const updateParsedResult = (id: string, parsedResult: ParsedResult[]) =>
+    persist(items.map((i) => (i.id === id ? { ...i, parsedResult } : i)));
+
   // Pinned items first, both groups sorted newest first
   const sorted = [
     ...items.filter((i) => i.pinned).sort((a, b) => b.savedAt - a.savedAt),
     ...items.filter((i) => !i.pinned).sort((a, b) => b.savedAt - a.savedAt),
   ];
 
-  return { saved: sorted, save, remove, rename, togglePin, updateTimestamps };
+  return { saved: sorted, save, remove, rename, togglePin, updateTimestamps, updateParsedResult };
 }

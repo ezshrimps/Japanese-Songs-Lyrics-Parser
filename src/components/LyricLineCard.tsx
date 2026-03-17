@@ -89,9 +89,9 @@ interface Props {
   isActive?: boolean;
   isLinePlaying?: boolean;
   onPlay?: () => void;
-  level?: string;
   creditsRemaining?: number;
   onCreditsChange?: (n: number) => void;
+  onGrammarLoaded?: (index: number, units: GrammarUnit[], translation?: string) => void;
 }
 
 const fmt = (s: number) =>
@@ -99,11 +99,12 @@ const fmt = (s: number) =>
 
 export default function LyricLineCard({
   line, index = 0, savedIds, onSaveGrammar,
-  timestamp, isActive = false, isLinePlaying = false, onPlay, level = "中级",
-  creditsRemaining, onCreditsChange,
+  timestamp, isActive = false, isLinePlaying = false, onPlay,
+  creditsRemaining, onCreditsChange, onGrammarLoaded,
 }: Props) {
   const [expanded, setExpanded]         = useState(false);
   const [hoveredText, setHoveredText]   = useState<string | null>(null);
+  const [translation, setTranslation]   = useState<string>(line.chineseTranslation);
   // null = not yet loaded, [] = loaded (possibly empty), GrammarUnit[] = loaded with items
   const [grammar, setGrammar]           = useState<GrammarUnit[] | null>(
     line.grammarBreakdown.length > 0 ? line.grammarBreakdown : null
@@ -121,7 +122,7 @@ export default function LyricLineCard({
       const res = await fetch("/api/grammar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line: line.originalText, level }),
+        body: JSON.stringify({ line: line.originalText }),
       });
       const data = await res.json();
       if (res.status === 429) {
@@ -132,7 +133,11 @@ export default function LyricLineCard({
       }
       const left = res.headers.get("X-Credits-Remaining");
       if (left !== null) onCreditsChange?.(Number(left));
-      setGrammar(Array.isArray(data.units) ? data.units : []);
+      const units = Array.isArray(data.units) ? data.units : [];
+      const tr: string = data.translation ?? "";
+      setGrammar(units);
+      if (tr) setTranslation(tr);
+      onGrammarLoaded?.(index, units, tr || undefined);
     } catch {
       setGrammar([]);
     } finally {
@@ -247,7 +252,7 @@ export default function LyricLineCard({
 
         {/* Translation */}
         <p className="font-black leading-loose" style={{ fontSize: "clamp(1.1rem, 3vw, 1.8rem)", color: "#EEC170" }}>
-          {line.chineseTranslation}
+          {translation}
         </p>
       </div>
 

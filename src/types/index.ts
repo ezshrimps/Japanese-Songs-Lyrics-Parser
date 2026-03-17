@@ -27,6 +27,7 @@ export interface GrammarUnit {
   romaji: string;
   partOfSpeech: string;
   explanation: string;
+  baseForm?: string;
 }
 
 export interface ParsedResult {

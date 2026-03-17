@@ -88,17 +88,21 @@ function tokenizeLine(tokenizer: any, text: string): ParsedResult {
   const tokens: any[] = tokenizer.tokenize(text);
 
   const segments: Segment[] = tokens.map((t) => {
+    const hasReading = t.reading !== undefined;
     const reading: string = t.reading ?? t.surface_form;
     const hira = kata2hira(reading);
-    const hiragana = containsKanji(t.surface_form) ? hira : null;
+    // Only attach furigana when kuromoji has a reading AND the surface has kanji
+    const hiragana = containsKanji(t.surface_form) && hasReading ? hira : null;
+    // Skip romaji for kanji tokens kuromoji couldn't read (avoids raw kanji in romaji line)
+    const romaji = !hasReading && containsKanji(t.surface_form) ? "" : toRomaji(hira);
     return {
       text: t.surface_form,
       hiragana,
-      romaji: toRomaji(hira),
+      romaji,
     };
   });
 
-  const fullRomaji = segments.map((s) => s.romaji).join(" ").trim();
+  const fullRomaji = segments.map((s) => s.romaji).filter(Boolean).join(" ").trim();
 
   const kana = segments
     .map((s) => s.hiragana ?? s.text)
@@ -116,32 +120,6 @@ function tokenizeLine(tokenizer: any, text: string): ParsedResult {
   };
 }
 
-// ── DeepL translation (batch) ─────────────────────────────────────────────
-async function translateDeepL(texts: string[]): Promise<string[]> {
-  const apiKey = process.env.DEEPL_API_KEY;
-  if (!apiKey || texts.length === 0) return texts.map(() => "");
-
-  const isFree = apiKey.endsWith(":fx");
-  const endpoint = isFree
-    ? "https://api-free.deepl.com/v2/translate"
-    : "https://api.deepl.com/v2/translate";
-
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `DeepL-Auth-Key ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text: texts, source_lang: "JA", target_lang: "ZH" }),
-    });
-    if (!res.ok) return texts.map(() => "");
-    const data = await res.json() as { translations: { text: string }[] };
-    return data.translations.map((t) => t.text);
-  } catch {
-    return texts.map(() => "");
-  }
-}
 
 // ── Route ──────────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
@@ -172,10 +150,6 @@ export async function POST(request: NextRequest) {
     // Tokenize all unique lines (fast, local, free)
     const tokenizer = await getTokenizer();
     const parsed = uniqueLines.map((line) => tokenizeLine(tokenizer, line));
-
-    // Translate in one batch via DeepL
-    const translations = await translateDeepL(uniqueLines);
-    parsed.forEach((p, i) => { p.chineseTranslation = translations[i]; });
 
     // Expand back to original order
     const expanded = expandMap.map((i) => parsed[i]);

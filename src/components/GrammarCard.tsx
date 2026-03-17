@@ -81,6 +81,13 @@ export default function GrammarCard({ unit, onHoverIn, onHoverOut, onSave, isSav
           <span style={{ color: "#444" }}>{unit.romaji}</span>
         </p>
 
+        {/* Base form */}
+        {unit.baseForm && (
+          <p className="text-[11px]" style={{ color: "#444" }}>
+            原型 <span style={{ color: "#666" }}>{unit.baseForm}</span>
+          </p>
+        )}
+
         {/* Divider */}
         <div style={{ height: 1, background: "#222" }} />
 

@@ -15,11 +15,11 @@ function posColor(pos: string) {
 }
 
 function exportGrammarCSV(items: SavedGrammar[]) {
-  const header = ["词", "读音", "罗马字", "词性", "解释", "出处"];
+  const header = ["词", "读音", "罗马字", "原型", "词性", "解释", "出处"];
   const escape = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const rows = items.map((i) => [
     i.unit.text, i.unit.hiragana, i.unit.romaji,
-    i.unit.partOfSpeech, i.unit.explanation, i.sourceLine,
+    i.unit.baseForm ?? "", i.unit.partOfSpeech, i.unit.explanation, i.sourceLine,
   ].map(escape).join(","));
   const csv = [header.join(","), ...rows].join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -67,6 +67,7 @@ function SidebarItem({ item, isActive, onLoad, onDelete, onTogglePin, onRename }
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(item.title);
+  const [hovered, setHovered] = useState(false);
 
   const commit = () => {
     const t = draft.trim();
@@ -74,7 +75,7 @@ function SidebarItem({ item, isActive, onLoad, onDelete, onTogglePin, onRename }
     setEditing(false);
   };
 
-  const bg        = isActive ? "rgba(238,193,112,0.07)" : item.pinned ? "rgba(232,93,74,0.06)" : "transparent";
+  const bg        = isActive ? "rgba(238,193,112,0.07)" : hovered ? "#1e1e1e" : item.pinned ? "rgba(232,93,74,0.06)" : "transparent";
   const borderCol = isActive ? "#EEC170" : item.pinned ? "#e85d4a" : "transparent";
 
   return (
@@ -101,8 +102,8 @@ function SidebarItem({ item, isActive, onLoad, onDelete, onTogglePin, onRename }
         <div
           className="flex items-center gap-2 px-3 py-2.5 cursor-pointer rounded-lg transition-colors duration-150"
           onClick={onLoad}
-          onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#1e1e1e"; }}
-          onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          onMouseEnter={() => { if (!isActive) setHovered(true); }}
+          onMouseLeave={() => setHovered(false)}
         >
           {isActive
             ? <span style={{ color: "#EEC170", flexShrink: 0, fontSize: 9 }}>▶</span>
