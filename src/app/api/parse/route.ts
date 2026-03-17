@@ -82,19 +82,19 @@ function containsKanji(text: string): boolean {
 const STRIP_RE = /[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g;
 
 // ── Sentence boundary splitter (kuromoji-based) ───────────────────────────
-// Detects natural sentence breaks in a long line with no newlines/spaces.
-// Uses POS tags: sentence-final particles (終助詞) and verb dictionary forms
-// followed by a new clause opener (noun, topic/subject particle, interjection).
-const MIN_SEG_JP = 6; // minimum JP chars per split segment
+// Only runs on lines with > 10 JP chars. Splits only when both resulting
+// segments have at least 8 JP chars (prevents creating 2-char fragments).
+const MIN_LINE_JP  = 10; // lines with ≤ this many JP chars are never split
+const MIN_SEG_JP   = 8;  // each resulting segment must have at least this many
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function splitBySentenceBoundary(tokenizer: any, line: string): string[] {
+  // Never split short lines
+  if (countJP(line) <= MIN_LINE_JP) return [line];
+
   // Split on punctuation first (。！？)
   const byPunct = line.split(/(?<=[。！？])/).map((s) => s.trim()).filter(Boolean);
-  if (byPunct.length > 1) return byPunct;
-
-  // Not long enough to bother splitting
-  if (countJP(line) < MIN_SEG_JP * 2) return [line];
+  if (byPunct.length > 1 && byPunct.every((s) => countJP(s) >= MIN_SEG_JP)) return byPunct;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens: any[] = tokenizer.tokenize(line);
@@ -125,14 +125,18 @@ function splitBySentenceBoundary(tokenizer: any, line: string): string[] {
 
   if (boundaries.length === 0) return [line];
 
+  // Build candidate segments; abort the whole split if any segment is too short
   const segments: string[] = [];
   let prev = 0;
   for (const pos of boundaries) {
     const seg = line.slice(prev, pos).trim();
-    if (countJP(seg) >= MIN_SEG_JP) { segments.push(seg); prev = pos; }
+    if (countJP(seg) < MIN_SEG_JP) return [line]; // fragment too short — keep original
+    segments.push(seg);
+    prev = pos;
   }
   const last = line.slice(prev).trim();
-  if (last) segments.push(last);
+  if (countJP(last) < MIN_SEG_JP) return [line]; // trailing fragment too short
+  segments.push(last);
 
   return segments.length > 1 ? segments : [line];
 }
