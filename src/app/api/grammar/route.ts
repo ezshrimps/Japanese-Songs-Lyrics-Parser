@@ -55,10 +55,12 @@ export async function POST(request: NextRequest) {
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-lite",
-      systemInstruction: `You are a Japanese language expert. For the given Japanese song lyric line:
-1. Provide a natural Chinese translation in the "translation" field.
+      systemInstruction: `You are a Japanese language expert. IMPORTANT: All output text must be in Simplified Chinese (简体中文) only — never use English, Spanish, or any other language.
+
+For the given Japanese song lyric line:
+1. Provide a natural Simplified Chinese translation in the "translation" field. The translation MUST be in Chinese characters (汉字).
 2. Break it into grammatical/morphological units in "units". For conjugated verbs, explain the conjugation. For verbs, adjectives, and auxiliary verbs, provide the dictionary form (原型) in "baseForm"; leave "baseForm" empty for particles, pronouns, and other non-inflectable words.
-All text in "explanation" and "translation" must be Simplified Chinese (简体中文). Use 「」for quoting word meanings.
+All "explanation" and "translation" values must be written in Simplified Chinese (简体中文). Use 「」for quoting word meanings.
 partOfSpeech must be one of: 名词/动词/助词/形容词/副词/助动词/接续词/感叹词`,
       generationConfig: {
         responseMimeType: "application/json",
