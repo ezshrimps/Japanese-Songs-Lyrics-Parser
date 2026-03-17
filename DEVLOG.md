@@ -747,12 +747,160 @@ Server
 
 ---
 
+## Phase 19: Parse Architecture — LLM Line Splitting + LRCLIB Discovery
+
+### The Parse Cost Problem
+
+The original parse pipeline called Claude (opus-4-6) for everything: segmentation, furigana, romaji, translation, and grammar — all in one shot. Even after switching to kuromoji for segmentation and DeepL for translation, the remaining issue was **line splitting**: users could paste raw lyrics with no newlines, and the app had no reliable way to know where one sung phrase ended and the next began.
+
+My first attempt was a kuromoji-based sentence boundary detector using POS tags (終助詞, verb 基本形 followed by a new clause opener). After two rounds of tuning it still over-split: lines with two kanji ended up as separate entries, and users could confirm it was too aggressive.
+
+The better solution: **let an LLM do the splitting**. One Gemini 2.5 Flash Lite call at parse time — cheap (~$0.00022), deterministic with structured output, and actually understands Japanese lyric phrasing. The entire kuromoji split/merge codebase was deleted.
+
+```
+POST /api/parse { lyrics: string }
+  → Gemini: split into lines[]     ← costs 1 credit
+  → kuromoji: tokenize each line   ← free
+  → return ParsedResult[]
+```
+
+**Prompt engineering for the splitter:**
+- Strip inline furigana (e.g. `以上いじょう` → `以上`, `傷つくきずつく` → `傷つく`) — a common format on Japanese lyrics sites
+- Group morpheme-level fragments back into natural phrases
+- Target 8–15 JP chars per line; only exceed if genuinely unsplittable
+- Merge lines shorter than 5 chars unless they stand alone musically
+
+**Length guard:** `MAX_CHARS` dropped from 20,000 to 2,000. A typical J-pop song is 300–800 chars. Anything over 2,000 gets a friendly "歌词过长" error — this catches multi-song concatenation and token-farming attempts.
+
+### LRCLIB — The Discovery That Changed Everything
+
+While researching lyrics APIs, I came across [LRCLIB](https://lrclib.net) — a free, open, no-auth community lyrics database with ~3M tracks including **LRC synced lyrics**: timestamped line-by-line data in `[mm:ss.xx] text` format.
+
+```
+[00:09.08] 貴方は風のように
+[00:12.80] 目を閉じては夕暮れ
+[00:17.68] 何を思っているんだろうか
+```
+
+This was a breakthrough. The LRC format gives us:
+1. **Line boundaries already solved** — no LLM splitting needed
+2. **Timestamps for free** — no WhisperX alignment needed
+
+The entire WhisperX pipeline (Replicate API call, audio upload, forced alignment) becomes optional for any song in the LRCLIB catalogue.
+
+### LRCLIB Integration
+
+**`/api/lrclib` proxy route:**
+```
+GET /api/lrclib?q=夜に駆ける    → search results
+GET /api/lrclib?id=12345        → get track by ID
+```
+Server-side proxy avoids CORS issues and adds a `Lrclib-Client` header per their guidelines.
+
+**LRC parser:**
+```typescript
+function parseLrc(lrc: string): { text: string; time: number }[] {
+  return lrc.split("\n").map((line) => {
+    const m = line.match(/^\[(\d{2}):(\d{2}(?:\.\d+)?)\]\s*(.*)$/);
+    if (!m) return null;
+    return { text: m[3].trim(), time: parseInt(m[1]) * 60 + parseFloat(m[2]) };
+  }).filter((l): l is { text: string; time: number } => l !== null && l.text.length > 0);
+}
+```
+
+**Timestamps conversion to `LineTimestamp[]`:**
+Each line's `endTime` = the next line's `startTime` (last line gets +5 seconds as a default tail).
+
+**Parse API — two paths:**
+```
+POST /api/parse { lines: string[] }   → Path A: kuromoji only, FREE, no credit
+POST /api/parse { lyrics: string }    → Path B: Gemini split + kuromoji, 1 credit
+```
+
+Path A is used for all LRCLIB-sourced songs. The lines are already properly split, so there's nothing for the LLM to do.
+
+### New Song Modal — Tab UI
+
+The "新建歌曲" modal gained a tab switcher:
+
+```
+┌─ 搜索歌曲 ──────────────────────────────────────┐
+│  [search input]          [搜索]                  │
+│  ┌──────────────────────────────────── 3:24 ──┐  │
+│  │ 晴る — ヨルシカ · 幻燈 (Gentouu)  [时间轴] │  │
+│  └──────────────────────────────────────────┘  │
+│  数据来源：LRCLIB · 带「时间轴」标记的曲目…     │
+└─────────────────────────────────────────────────┘
+
+┌─ 粘贴歌词 ─┐  (original textarea + parse button)
+```
+
+The `时间轴` teal badge marks tracks with synced LRC data — these load instantly with timestamps already set.
+
+---
+
+## Phase 20: WhisperX Becomes Optional
+
+With LRC timestamps available for catalogue songs, the audio upload logic needed updating.
+
+**Before:** Uploading audio always cleared timestamps and triggered WhisperX alignment.
+
+**After:**
+```typescript
+const handleAudioFile = async (file: File) => {
+  setAudioUrl(url);
+  // ...
+  if (timestamps) return;  // ← LRC timestamps exist; audio is playback-only
+  // ... WhisperX alignment only runs here for manual-paste songs
+};
+```
+
+The `setTimestamps(null)` that used to run unconditionally on every audio upload was removed. Now:
+
+| Song source | Audio upload does |
+|-------------|-------------------|
+| LRCLIB search (has LRC timestamps) | Sets playback URL only |
+| Manual paste (no timestamps) | Triggers WhisperX alignment as before |
+
+This means for catalogue songs, the full workflow is:
+1. Search → select → instant parse (free)
+2. Upload MP3/audio → immediate synchronized playback
+3. No API calls, no alignment wait
+
+---
+
+## Updated Architecture (as of Phase 20)
+
+```
+Browser
+  └── page.tsx
+        ├── 新建歌曲 modal
+        │     ├── [搜索歌曲] tab → LrcSearchPanel → /api/lrclib → /api/parse{lines}
+        │     └── [粘贴歌词] tab → textarea → /api/parse{lyrics}
+        ├── LyricsDisplay → LyricLineCard → /api/grammar (on expand)
+        ├── Audio upload
+        │     ├── has timestamps? → playback only
+        │     └── no timestamps?  → /api/align (WhisperX)
+        └── SavedLyricsSidebar
+
+Server
+  ├── /api/lrclib      → proxy to lrclib.net (search + get)
+  ├── /api/parse       → Path A: kuromoji (free, lines[])
+  │                    → Path B: Gemini split + kuromoji (1 credit, lyrics string)
+  ├── /api/grammar     → credits check → Gemini 2.5 Flash Lite (1 credit/line)
+  ├── /api/align       → WhisperX via Replicate (manual-paste songs only)
+  └── /api/credits     → in-memory IP rate limiter (20/day)
+```
+
+---
+
 ## Updated Branch History
 
 | Branch | Purpose |
 |--------|---------|
 | `main` | Current production version |
-| `gemini-grammar` | Branch where Gemini grammar API + credits system were developed |
+| `lrclib-search` | LRCLIB integration + LRC search UI |
+| `gemini-grammar` | Gemini grammar API + credits system |
 | `original` | Snapshot of the pre-alignment codebase |
 | `whisperx` | WhisperX alignment integration (merged to main) |
 | `force-alignment` | Forced-alignment experiments — both models failed for Japanese music |
