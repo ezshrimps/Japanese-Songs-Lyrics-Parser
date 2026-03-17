@@ -45,8 +45,11 @@ Rules:
 - Each element in "lines" is exactly one sung phrase as it would appear in a lyrics booklet.
 - Preserve the original Japanese characters exactly — do not translate, romanize, or modify any text.
 - Remove empty lines, section markers ([Verse], [サビ], ※, etc.), and any non-lyric annotations.
-- Do not merge multiple distinct phrases into one line.
-- Do not split a single natural phrase across multiple lines.`,
+- Some inputs have inline furigana appended directly after kanji (e.g. "以上いじょう", "傷つくきずつく"). Strip the furigana reading and keep only the kanji/original form (e.g. "以上", "傷つく").
+- Some inputs have been pre-split into individual morphemes or very short fragments (single particles, single words). In that case, GROUP them back into natural sung phrases.
+- Target length per line: 8–15 Japanese characters. Only exceed 15 characters if the phrase is genuinely one continuous, unsplittable musical phrase.
+- Lines shorter than 5 Japanese characters should be merged with adjacent lines unless they truly stand alone as a complete musical phrase (e.g. a one-word title, an exclamation).
+- Do not merge multiple distinct sung phrases into one line.`,
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
