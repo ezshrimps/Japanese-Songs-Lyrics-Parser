@@ -6,7 +6,7 @@ import path from "path";
 
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
 
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 interface WordStamp { word: string; start: number; end: number; score?: number; }
 interface Segment   { start: number; end: number; text: string; words?: WordStamp[]; }
