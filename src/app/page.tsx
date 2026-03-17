@@ -273,11 +273,14 @@ export default function Home() {
   const handleAudioFile = async (file: File) => {
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
-    setTimestamps(null);
     setCurrentTime(0);
     setIsPlaying(false);
     setActiveLine(null);
     segmentEndRef.current = null;
+
+    // If timestamps already exist (e.g. loaded from LRC search), just use the audio
+    // for playback — no alignment needed.
+    if (timestamps) return;
     if (!result) return;
 
     const actualDuration = await new Promise<number>((resolve) => {
