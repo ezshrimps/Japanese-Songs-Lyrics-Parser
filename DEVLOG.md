@@ -527,3 +527,232 @@ The input character limit was also raised from 5000 to 15000 to accommodate full
 | `original` | Snapshot of the pre-alignment codebase |
 | `whisperx` | Same as main (source branch before promotion) |
 | `force-alignment` | Forced-alignment experiments — both models failed for Japanese music |
+
+---
+
+## Phase 13: Replicate Experiment — A Dead End
+
+After the WhisperX work, I experimented with switching the **lyrics parser** itself to a different model via Replicate (`claude-4.5-sonnet`). The idea was to reduce Anthropic API costs by routing through Replicate's pricing.
+
+It didn't stick. The Replicate wrapper adds latency without meaningful cost savings for this use case, and maintaining two SDK integrations added complexity for no user-visible benefit. One commit later it was reverted back to the Anthropic SDK with `claude-sonnet-4-6`.
+
+**Lesson:** Routing API calls through intermediary platforms makes sense at high volume. For a tool still in active development, the debugging overhead isn't worth it.
+
+---
+
+## Phase 14: Level Selector + Visual Polish + CSV Export
+
+### Japanese Level Selector (初级 / 中级 / 高级)
+
+I added a vertical level picker to the left of the input card — three buttons color-coded green / blue / purple. The selected level is passed to the parse API and changes how the grammar breakdown is filtered:
+
+- **初级**: All grammar units, full explanations — nothing skipped
+- **中级**: Common particles and pronouns deprioritized; focus on conjugations and grammatical patterns
+- **高级**: Only N3+ grammar (advanced conditionals, passive/causative, honorifics, compound particles)
+
+This makes the tool genuinely useful across different learner profiles without complicating the UI — the level selector is the only knob.
+
+### CSV Export
+
+Users can now download all saved grammar cards as a CSV file. Each row: lyric line, Japanese term, hiragana, romaji, part of speech, explanation. The format is Anki-ready — paste directly into a flashcard deck.
+
+### POS Color Map Stabilization
+
+The part-of-speech color stripe on grammar cards went through several iterations before settling:
+
+```
+動詞 → #4A90E8 (blue)
+名詞 → #E8634A (coral)
+形容 → #9B59B6 (purple)
+副詞 → #27AE60 (green)
+助詞/接続 → #38BCD4 (teal)
+```
+
+A bug where all cards rendered the same color was traced to a CSS specificity issue — inline styles were overriding the Tailwind class that read the POS value. Fixed by computing the color in the component and applying it directly as a style prop.
+
+The system prompt was also updated to enforce **Simplified Chinese** (简体中文) for all `partOfSpeech` values. Without this, Claude would sometimes output Traditional Chinese or Japanese-script POS labels, breaking the color lookup.
+
+---
+
+## Phase 15: Architecture Overhaul — kuromoji + DeepL + On-Demand Grammar
+
+This was the biggest architectural change since Phase 2. The original design called a single Claude endpoint that did everything: segmentation, furigana, romaji, translation, and grammar breakdown — all in one request, for all lines. It worked but had serious cost and speed problems at scale.
+
+### The New Pipeline
+
+```
+Before:  lyrics → Claude (opus-4-6) → {segments + furigana + romaji + translation + grammar}
+After:   lyrics → kuromoji (local)  → {segments + furigana + romaji}
+                → DeepL API (batch) → {translation per line}
+                → Gemini / Haiku (on-demand, per expand) → {grammar breakdown}
+```
+
+**kuromoji** is a pure-JavaScript Japanese morphological analyzer. It runs entirely in Node.js — no external API call, no cost, no latency beyond CPU time. It produces:
+- Morpheme segmentation (exactly the boundaries needed for `<ruby>` tags)
+- Hiragana readings for kanji segments
+- Part-of-speech tags (used to filter katakana words that don't need furigana)
+
+**DeepL** translates all lines in a single batched request. The free tier allows 500k characters/month, which is essentially unlimited for a lyrics tool.
+
+**Grammar breakdown is now lazy.** When a line is parsed, `grammarBreakdown` is an empty array. The grammar panel's expand button triggers a fresh API call for that line only, fetching and caching the result client-side. The first expand shows a spinner; subsequent expands are instant.
+
+```typescript
+// LyricLineCard: grammar loaded once per session, cached in component state
+const [grammar, setGrammar] = useState<GrammarUnit[]>([]);
+const [grammarLoaded, setGrammarLoaded] = useState(false);
+
+const handleExpand = async () => {
+  if (!grammarLoaded) {
+    const res = await fetch("/api/grammar", { method: "POST", body: JSON.stringify({ line }) });
+    const data = await res.json();
+    setGrammar(data.units);
+    setGrammarLoaded(true);
+  }
+  setOpen((prev) => !prev);
+};
+```
+
+**Result:** A full 40-line song parse now costs ~$0 in AI API fees. Grammar costs only accrue for lines the user actually opens.
+
+### Handling kuromoji Edge Cases
+
+kuromoji segments lyrics mechanically — it doesn't understand song-specific merged lines (e.g., two lyric lines concatenated with a `・`). A pre-processing step splits on common separators before feeding to kuromoji:
+
+```typescript
+const lines = rawInput
+  .split(/[・\n]/)
+  .map(l => l.trim())
+  .filter(Boolean);
+```
+
+This prevents single-segment outputs for merged lines and keeps the segment count consistent with WhisperX's word list.
+
+---
+
+## Phase 16: Credits System
+
+With grammar calls now being real, metered API calls, I needed rate limiting. I built a lightweight IP-based credits system entirely in-memory (no database required for the MVP).
+
+### Design
+
+```
+/api/credits  → GET: returns { remaining, limit }
+/api/grammar  → POST: checks credits, calls AI, deducts on success
+              → returns X-Credits-Remaining header on every response
+```
+
+The store is a `Map<string, { count: number; resetAt: number }>` keyed by IP. Each IP gets 20 free grammar expansions per day. The `resetAt` timestamp is set to midnight UTC of the current day, and stale entries are auto-expired on read.
+
+### UI Feedback
+
+The header displays a live credit counter: **✦ 18/20**. When credits drop to ≤3, the counter turns coral as a visual warning. The grammar expand button changes appearance based on state:
+
+- **Before first load**: gold star with a `-1积分` cost badge — communicates the action has a cost
+- **After load**: plain chevron — just a toggle, no more charges
+
+This staged UI ensures users aren't surprised by credit consumption while still making the cost visible upfront.
+
+---
+
+## Phase 17: UX Overhaul — Modals, Sidebar, Onboarding
+
+### Input Modal
+
+The main input form moved from an inline card to a **modal** (z-index 60, backdrop click to close). This cleans up the primary view — when you're reading lyrics, the input form isn't taking up half the screen. A "新建歌曲" button (dashed coral border, pinned at top of the lyric list) reopens the modal.
+
+### Welcome Modal
+
+First-time visitors see an onboarding modal explaining the core workflow:
+1. Paste lyrics → parse
+2. Click any line's grammar button to get word-by-word breakdown
+3. Upload audio for synchronized playback
+4. Save songs to the sidebar
+
+The modal only shows once (stored in `localStorage`), so returning users go straight to their saved songs.
+
+### Sidebar Improvements
+
+- **Active song highlighting**: the currently loaded song in the sidebar gets a gold left border, gold text, and a `▶` indicator — clear visual feedback on which song is active
+- **Sidebar toggle relocation**: the open/close toggle moved into the sidebar header itself, next to the 收藏 label, with a separate edge tab that appears when the sidebar is closed
+- **Audio timestamp persistence**: alignment timestamps are now saved in `SavedLyric` and restored on load — uploading an audio file to a saved song works immediately without re-alignment
+
+### Stale Grammar State Fix
+
+When switching between saved songs, the grammar breakdown from the previous song could bleed into the new one. The root cause: `grammarLoaded` was tracked in component state, but the components were being reused across song switches without unmounting.
+
+Fix: add a `key` prop tied to the lyric line's index + content hash. React unmounts and remounts the component on key change, resetting all local state including `grammarLoaded`.
+
+---
+
+## Phase 18: Switch to Gemini 2.5 Flash Lite + Business Model
+
+### Why Gemini
+
+The grammar API was using Claude Haiku. I switched it to **Gemini 2.5 Flash Lite** for two reasons:
+
+1. **Cost**: Gemini 2.5 Flash Lite is one of the cheapest capable models available (~$0.075/M input, $0.30/M output). A single grammar call costs ~$0.00022 — roughly ¥0.0016 per line.
+2. **Structured output**: Gemini's `responseSchema` + `responseMimeType: "application/json"` works similarly to Anthropic's tool use. The SDK enforces the schema at the model level, eliminating JSON parsing failures.
+
+```typescript
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.5-flash-lite",
+  generationConfig: {
+    responseMimeType: "application/json",
+    responseSchema: RESPONSE_SCHEMA,
+    temperature: 0.1,
+  },
+});
+```
+
+The schema adds a `baseForm` field (原型) for inflectable words — useful for learners who want to look up a verb's dictionary form.
+
+### Business Model Document
+
+With the tech cost structure validated (≈97% gross margin on grammar calls), I wrote a full `BUSINESS_MODEL.md` covering:
+- Freemium boundary: first 30% of lines free
+- Credits as the monetization primitive (1 credit = 1 grammar expansion)
+- Pricing via 爱发电 (afdian.net), China's Patreon equivalent
+- Revenue projections for 500 and 3000 MAU scenarios
+- A phased roadmap from manual activation codes to a full Supabase + Clerk auth system
+
+The 30% free threshold is deliberate: it gives users the opening verses to fall in love with the experience, but the chorus and bridge — where the most interesting grammar lives — require credits.
+
+---
+
+## Updated Architecture (as of Phase 18)
+
+```
+Browser
+  └── page.tsx (client component)
+        ├── useSavedLyrics (localStorage hook — includes timestamps)
+        ├── SavedLyricsSidebar (active highlight, pin/rename/delete)
+        ├── Welcome modal (first-visit onboarding)
+        ├── Input modal (new song form)
+        └── LyricsDisplay
+              └── LyricLineCard (×N lines)
+                    ├── ruby + romaji (from kuromoji, free)
+                    ├── Translation pill (from DeepL, free tier)
+                    └── Grammar panel (lazy — Gemini call on first expand)
+                          └── GrammarCard (×M units, POS color stripe)
+
+Server
+  ├── /api/parse     → kuromoji (local) + DeepL API
+  ├── /api/grammar   → credits check → Gemini 2.5 Flash Lite
+  └── /api/credits   → in-memory IP rate limiter (20/day)
+```
+
+**Cost per full song parse:** ~$0 (kuromoji free, DeepL free tier)
+**Cost per grammar expansion:** ~$0.00022 (~¥0.0016)
+**Gross margin on ¥19.9 standard pack (350 credits):** ~97%
+
+---
+
+## Updated Branch History
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Current production version |
+| `gemini-grammar` | Branch where Gemini grammar API + credits system were developed |
+| `original` | Snapshot of the pre-alignment codebase |
+| `whisperx` | WhisperX alignment integration (merged to main) |
+| `force-alignment` | Forced-alignment experiments — both models failed for Japanese music |
