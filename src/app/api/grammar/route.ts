@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, SchemaType, ObjectSchema } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 import { GrammarUnit } from "@/types";
-import { consumeCredit, remaining, DAILY_LIMIT } from "@/app/api/credits/route";
+import { consumeCredit, remaining, DAILY_LIMIT } from "@/lib/credits";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 

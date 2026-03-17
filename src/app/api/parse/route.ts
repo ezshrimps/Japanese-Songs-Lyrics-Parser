@@ -4,7 +4,7 @@ import { ParsedResult, Segment } from "@/types";
 import { toRomaji } from "wanakana";
 import path from "path";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { consumeCredit, remaining, DAILY_LIMIT } from "@/app/api/credits/route";
+import { consumeCredit, remaining, DAILY_LIMIT } from "@/lib/credits";
 
 // A typical J-pop song is 300–800 chars. 2000 gives generous headroom
 // while catching abuse (multiple songs concatenated, or padding to farm tokens).

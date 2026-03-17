@@ -1,16 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-export const DAILY_LIMIT = 20;
-
-declare global {
-  // eslint-disable-next-line no-var
-  var grammarUsage: Map<string, { date: string; count: number }> | undefined;
-}
-if (!global.grammarUsage) global.grammarUsage = new Map();
-
-function today(): string {
-  return new Date().toISOString().split("T")[0];
-}
+import { remaining, resetIp, DAILY_LIMIT } from "@/lib/credits";
 
 function getIp(req: NextRequest): string {
   return (
@@ -20,39 +9,17 @@ function getIp(req: NextRequest): string {
   );
 }
 
-export function getUsage(ip: string): { date: string; count: number } {
-  const store = global.grammarUsage!;
-  const entry = store.get(ip);
-  if (!entry || entry.date !== today()) {
-    const fresh = { date: today(), count: 0 };
-    store.set(ip, fresh);
-    return fresh;
-  }
-  return entry;
-}
-
-export function consumeCredit(ip: string): number {
-  const entry = getUsage(ip);
-  entry.count += 1;
-  global.grammarUsage!.set(ip, entry);
-  return Math.max(0, DAILY_LIMIT - entry.count);
-}
-
-export function remaining(ip: string): number {
-  return Math.max(0, DAILY_LIMIT - getUsage(ip).count);
-}
-
 export async function GET(request: NextRequest) {
   const ip = getIp(request);
   return NextResponse.json({ remaining: remaining(ip), limit: DAILY_LIMIT });
 }
 
-// Dev-only: GET /api/credits/reset resets all credit counters
+// Dev-only: DELETE /api/credits resets credit counter for caller's IP
 export async function DELETE(request: NextRequest) {
   if (process.env.NODE_ENV !== "development") {
     return NextResponse.json({ error: "Not available" }, { status: 403 });
   }
   const ip = getIp(request);
-  global.grammarUsage!.delete(ip);
+  resetIp(ip);
   return NextResponse.json({ ok: true, remaining: DAILY_LIMIT });
 }
