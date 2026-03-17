@@ -74,9 +74,14 @@ partOfSpeech must be one of: 名词/动词/助词/形容词/副词/助动词/接
 
     const left = consumeCredit(ip);
 
+    const units = Array.isArray(parsed.units) ? parsed.units : [];
+    if (units.length === 0) {
+      console.warn("Grammar API: Gemini returned empty units for line:", line);
+    }
+
     return NextResponse.json(
       {
-        units: Array.isArray(parsed.units) ? parsed.units : [],
+        units,
         translation: parsed.translation ?? "",
       },
       { headers: { "X-Credits-Remaining": String(left), "X-Credits-Limit": String(DAILY_LIMIT) } }

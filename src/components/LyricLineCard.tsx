@@ -115,7 +115,7 @@ export default function LyricLineCard({
   const noCredits = creditsRemaining !== undefined && creditsRemaining <= 0 && grammar === null;
 
   const loadGrammar = async () => {
-    if (grammar !== null || grammarLoading || noCredits) return;
+    if ((grammar !== null && grammar.length > 0) || grammarLoading || noCredits) return;
     setGrammarLoading(true);
     setGrammarError(null);
     try {
@@ -127,19 +127,22 @@ export default function LyricLineCard({
       const data = await res.json();
       if (res.status === 429) {
         setGrammarError(data.error ?? "今日额度已用完");
-        setGrammar([]);
         onCreditsChange?.(0);
         return;
       }
       const left = res.headers.get("X-Credits-Remaining");
       if (left !== null) onCreditsChange?.(Number(left));
       const units = Array.isArray(data.units) ? data.units : [];
+      if (units.length === 0) {
+        setGrammarError("解析返回空，点击重试");
+        return;
+      }
       const tr: string = data.translation ?? "";
       setGrammar(units);
       if (tr) setTranslation(tr);
       onGrammarLoaded?.(index, units, tr || undefined);
     } catch {
-      setGrammar([]);
+      setGrammarError("解析失败，点击重试");
     } finally {
       setGrammarLoading(false);
     }
@@ -274,14 +277,14 @@ export default function LyricLineCard({
           }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
         >
-          <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: noCredits ? "#444" : "#EEC170" }}>
+          <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: noCredits ? "#444" : grammarError ? "#e85d4a" : "#EEC170" }}>
             {grammarLoading ? <Spinner /> : (
               /* Sparkle icon */
               <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
               </svg>
             )}
-            {grammarLoading ? "AI 解析中…" : noCredits ? "今日积分已用完" : "AI 解析语法"}
+            {grammarLoading ? "AI 解析中…" : noCredits ? "今日积分已用完" : grammarError ? grammarError : "AI 解析语法"}
           </span>
           {!noCredits && !grammarLoading && (
             <span
