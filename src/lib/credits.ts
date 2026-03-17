@@ -32,6 +32,3 @@ export function remaining(ip: string): number {
   return Math.max(0, DAILY_LIMIT - getUsage(ip).count);
 }
 
-export function resetIp(ip: string): void {
-  global.grammarUsage!.delete(ip);
-}
