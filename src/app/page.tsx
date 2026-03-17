@@ -872,10 +872,9 @@ export default function Home() {
 
             <div className="flex flex-col gap-3 mb-6">
               {[
-                { icon: "📖", text: "粘贴日文原版歌词，自动标注假名与罗马字" },
-                { icon: "🌏", text: "每行配上中文翻译，轻松理解歌词含义" },
+                { icon: "📖", text: "粘贴或搜索日文原版歌词，自动标注假名与罗马字" },
                 { icon: "✦",  text: "按需解析语法，点击展开深度学习（每日20次免费）" },
-                { icon: "🎵", text: "上传人声音频，实现逐行对位与卡拉OK模式" },
+                { icon: "🎵", text: "上传音频，实现逐句跟练" },
               ].map(({ icon, text }) => (
                 <div key={text} className="flex items-start gap-3">
                   <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{icon}</span>
