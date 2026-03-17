@@ -81,6 +81,62 @@ function containsKanji(text: string): boolean {
 
 const STRIP_RE = /[\s\u3000\u3001\u3002\uff0c\uff01\uff1f\u300c\u300d\u30fb\u00b7\u2019\uff08\uff09]/g;
 
+// ── Sentence boundary splitter (kuromoji-based) ───────────────────────────
+// Detects natural sentence breaks in a long line with no newlines/spaces.
+// Uses POS tags: sentence-final particles (終助詞) and verb dictionary forms
+// followed by a new clause opener (noun, topic/subject particle, interjection).
+const MIN_SEG_JP = 6; // minimum JP chars per split segment
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function splitBySentenceBoundary(tokenizer: any, line: string): string[] {
+  // Split on punctuation first (。！？)
+  const byPunct = line.split(/(?<=[。！？])/).map((s) => s.trim()).filter(Boolean);
+  if (byPunct.length > 1) return byPunct;
+
+  // Not long enough to bother splitting
+  if (countJP(line) < MIN_SEG_JP * 2) return [line];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tokens: any[] = tokenizer.tokenize(line);
+  const boundaries: number[] = [];
+  let charPos = 0;
+
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const t    = tokens[i];
+    const next = tokens[i + 1];
+    charPos += t.surface_form.length;
+
+    const isFinalParticle =
+      t.pos === "助詞" && t.pos_detail_1 === "終助詞";
+    const isFinalVerb =
+      (t.pos === "動詞" || t.pos === "助動詞") &&
+      (t.conjugated_form === "基本形" || t.conjugated_form === "命令ｙｏ");
+
+    if (!isFinalParticle && !isFinalVerb) continue;
+
+    // Next token should start a new clause: noun, interjection, or topic/subject particle
+    const nextStartsClause =
+      next.pos === "名詞" ||
+      next.pos === "感動詞" ||
+      (next.pos === "助詞" && (next.pos_detail_1 === "係助詞" || next.pos_detail_1 === "格助詞"));
+
+    if (nextStartsClause) boundaries.push(charPos);
+  }
+
+  if (boundaries.length === 0) return [line];
+
+  const segments: string[] = [];
+  let prev = 0;
+  for (const pos of boundaries) {
+    const seg = line.slice(prev, pos).trim();
+    if (countJP(seg) >= MIN_SEG_JP) { segments.push(seg); prev = pos; }
+  }
+  const last = line.slice(prev).trim();
+  if (last) segments.push(last);
+
+  return segments.length > 1 ? segments : [line];
+}
+
 // ── Tokenize a single line → ParsedResult (no translation yet) ────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function tokenizeLine(tokenizer: any, text: string): ParsedResult {
@@ -132,12 +188,21 @@ export async function POST(request: NextRequest) {
 
     const allLines = splitMergedLines(lyrics).split("\n").filter(Boolean);
 
+    // Tokenize first so we can use kuromoji for sentence boundary detection
+    const tokenizer = await getTokenizer();
+
+    // Re-split any merged lines that have no spaces/punctuation using POS analysis
+    const refinedLines: string[] = [];
+    for (const line of allLines) {
+      refinedLines.push(...splitBySentenceBoundary(tokenizer, line));
+    }
+
     // Deduplicate
     const uniqueLines: string[] = [];
     const lineToIdx = new Map<string, number>();
     const expandMap: number[] = [];
 
-    for (const line of allLines) {
+    for (const line of refinedLines) {
       if (!lineToIdx.has(line)) {
         lineToIdx.set(line, uniqueLines.length);
         uniqueLines.push(line);
@@ -145,10 +210,7 @@ export async function POST(request: NextRequest) {
       expandMap.push(lineToIdx.get(line)!);
     }
 
-    console.log(`[parse] ${allLines.length} lines → ${uniqueLines.length} unique`);
-
-    // Tokenize all unique lines (fast, local, free)
-    const tokenizer = await getTokenizer();
+    console.log(`[parse] ${refinedLines.length} lines → ${uniqueLines.length} unique`);
     const parsed = uniqueLines.map((line) => tokenizeLine(tokenizer, line));
 
     // Expand back to original order
