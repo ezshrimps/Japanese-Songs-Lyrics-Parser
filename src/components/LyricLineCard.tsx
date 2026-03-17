@@ -132,11 +132,11 @@ export default function LyricLineCard({
       }
       const left = res.headers.get("X-Credits-Remaining");
       if (left !== null) onCreditsChange?.(Number(left));
-      const units = Array.isArray(data.units) ? data.units : [];
-      if (units.length === 0) {
-        setGrammarError("解析返回空，点击重试");
+      if (!res.ok) {
+        setGrammarError(data.retryFree ? "解析异常，点击免费重试 ↺" : (data.error ?? "解析失败，点击重试"));
         return;
       }
+      const units = Array.isArray(data.units) ? data.units : [];
       const tr: string = data.translation ?? "";
       setGrammar(units);
       if (tr) setTranslation(tr);

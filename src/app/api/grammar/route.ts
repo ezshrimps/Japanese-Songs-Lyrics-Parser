@@ -74,12 +74,18 @@ partOfSpeech must be one of: 名词/动词/助词/形容词/副词/助动词/接
     const text = result.response.text();
     const parsed = JSON.parse(text) as { units: GrammarUnit[]; translation: string };
 
-    const left = consumeCredit(ip);
-
     const units = Array.isArray(parsed.units) ? parsed.units : [];
+
     if (units.length === 0) {
       console.warn("Grammar API: Gemini returned empty units for line:", line);
+      // Don't consume credit — empty result is a model failure, not a user action
+      return NextResponse.json(
+        { error: "解析返回空，不扣积分，请重试", retryFree: true },
+        { status: 503, headers: { "X-Credits-Remaining": String(remaining(ip)), "X-Credits-Limit": String(DAILY_LIMIT) } }
+      );
     }
+
+    const left = consumeCredit(ip);
 
     return NextResponse.json(
       {
