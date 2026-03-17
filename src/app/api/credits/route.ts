@@ -46,3 +46,13 @@ export async function GET(request: NextRequest) {
   const ip = getIp(request);
   return NextResponse.json({ remaining: remaining(ip), limit: DAILY_LIMIT });
 }
+
+// Dev-only: GET /api/credits/reset resets all credit counters
+export async function DELETE(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not available" }, { status: 403 });
+  }
+  const ip = getIp(request);
+  global.grammarUsage!.delete(ip);
+  return NextResponse.json({ ok: true, remaining: DAILY_LIMIT });
+}
