@@ -22,18 +22,21 @@ export function useSavedLyrics() {
     } catch {}
   };
 
-  const save = (content: string, parsedResult?: ParsedResult[]): string => {
-    const title =
-      content
-        .split("\n")
-        .map((l) => l.trim())
-        .find((l) => l.length > 0) ?? "无题";
+  const save = (
+    content: string,
+    parsedResult?: ParsedResult[],
+    overrideTitle?: string,
+    timestamps?: LineTimestamp[],
+  ): string => {
+    const autoTitle =
+      content.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "无题";
     const id = Date.now().toString();
     const item: SavedLyric = {
       id,
-      title: title.slice(0, 40),
+      title: (overrideTitle ?? autoTitle).slice(0, 60),
       content,
       parsedResult,
+      timestamps,
       pinned: false,
       savedAt: Date.now(),
     };

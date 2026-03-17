@@ -128,15 +128,35 @@ function getIp(req: NextRequest): string {
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
 
-  if (remaining(ip) <= 0) {
-    return NextResponse.json(
-      { error: "今日免费额度已用完，明天再来吧 ✦" },
-      { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
-    );
-  }
-
   try {
-    const { lyrics } = await request.json();
+    const body = await request.json();
+    const { lyrics, lines: preLines } = body as { lyrics?: string; lines?: string[] };
+
+    // ── Path A: pre-split lines from LRC search (free — no Gemini call) ──
+    if (Array.isArray(preLines) && preLines.length > 0) {
+      const allLines = preLines.map((l) => l.trim()).filter(Boolean);
+      const tokenizer = await getTokenizer();
+      const uniqueLines: string[] = [];
+      const lineToIdx = new Map<string, number>();
+      const expandMap: number[] = [];
+      for (const line of allLines) {
+        if (!lineToIdx.has(line)) { lineToIdx.set(line, uniqueLines.length); uniqueLines.push(line); }
+        expandMap.push(lineToIdx.get(line)!);
+      }
+      const parsed  = uniqueLines.map((l) => tokenizeLine(tokenizer, l));
+      const expanded = expandMap.map((i) => parsed[i]);
+      return NextResponse.json(expanded, {
+        headers: { "X-Credits-Remaining": String(remaining(ip)), "X-Credits-Limit": String(DAILY_LIMIT) },
+      });
+    }
+
+    // ── Path B: raw lyrics input — requires Gemini split (costs 1 credit) ─
+    if (remaining(ip) <= 0) {
+      return NextResponse.json(
+        { error: "今日免费额度已用完，明天再来吧 ✦" },
+        { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
+      );
+    }
 
     if (!lyrics || typeof lyrics !== "string") {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -149,7 +169,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // LLM splits the raw input into proper lyric lines (costs 1 credit)
     const allLines = await splitLyricsWithLLM(lyrics);
 
     if (allLines.length === 0) {

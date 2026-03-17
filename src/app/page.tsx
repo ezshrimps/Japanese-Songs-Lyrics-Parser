@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import LyricsDisplay from "@/components/LyricsDisplay";
 import SavedLyricsSidebar from "@/components/SavedLyricsSidebar";
+import LrcSearchPanel from "@/components/LrcSearchPanel";
 import { useSavedLyrics } from "@/hooks/useSavedLyrics";
 import { useSavedGrammar } from "@/hooks/useSavedGrammar";
 import { ParsedResult, LineTimestamp } from "@/types";
@@ -123,6 +124,7 @@ export default function Home() {
   const [alignModel, setAlignModel]     = useState("medium");
   const [credits, setCredits]           = useState<number | null>(null);
   const [inputModalOpen, setInputModalOpen] = useState(false);
+  const [inputTab, setInputTab]             = useState<"paste" | "search">("paste");
   const [showWelcome, setShowWelcome]       = useState(false);
 
   const setActiveLine = (idx: number | null) => {
@@ -217,6 +219,32 @@ export default function Home() {
       setIsLoading(false);
       setInputModalOpen(false);
     }
+  };
+
+  const handleLrcLoaded = ({
+    title,
+    lines,
+    parsedResult,
+    timestamps,
+  }: {
+    title: string;
+    lines: string[];
+    parsedResult: ParsedResult[];
+    timestamps: LineTimestamp[] | null;
+  }) => {
+    const raw = lines.join("\n");
+    setLyrics(raw);
+    setResult(parsedResult);
+    setTimestamps(timestamps);
+    setError(null);
+    setAudioUrl(null);
+    setActiveLine(null);
+    segmentEndRef.current = null;
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    const id = save(raw, parsedResult, title, timestamps ?? undefined);
+    setCurrentSavedId(id);
   };
 
   const handleSave = () => {
@@ -901,8 +929,7 @@ export default function Home() {
           >
             {/* Modal header */}
             <div
-              className="flex justify-between items-center px-6 pt-5 pb-4"
-              style={{ borderBottom: "1px solid #2a2a2a" }}
+              className="flex items-center justify-between px-6 pt-5 pb-0"
             >
               <div className="flex items-center gap-2">
                 <span style={{ color: "#E8634A", fontSize: 14 }}>♪</span>
@@ -919,9 +946,50 @@ export default function Home() {
               </button>
             </div>
 
+            {/* Tabs */}
+            <div className="flex gap-0 px-6 pt-3 pb-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
+              {(["search", "paste"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setInputTab(tab)}
+                  className="px-4 py-2 text-sm font-medium transition-colors duration-150 relative"
+                  style={{
+                    color: inputTab === tab ? "#f0f0f0" : "#555",
+                    borderBottom: inputTab === tab ? "2px solid #E8634A" : "2px solid transparent",
+                    marginBottom: "-1px",
+                  }}
+                >
+                  {tab === "search" ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                      搜索歌曲
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      粘贴歌词
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
             {/* Modal body */}
             <div className="px-6 pb-6 pt-5">
-              {formContent}
+              {inputTab === "search" ? (
+                <LrcSearchPanel
+                  onLoaded={handleLrcLoaded}
+                  onClose={() => setInputModalOpen(false)}
+                />
+              ) : (
+                formContent
+              )}
             </div>
           </div>
         </div>
