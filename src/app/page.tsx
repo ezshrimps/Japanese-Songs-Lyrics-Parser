@@ -206,6 +206,8 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error ?? "解析失败，请重试");
+      const left = res.headers.get("X-Credits-Remaining");
+      if (left !== null) setCredits(Number(left));
       setResult(data);
       const id = save(trimmed, data);
       setCurrentSavedId(id);
@@ -476,6 +478,13 @@ export default function Home() {
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               解析歌词 ⌘↵
+              <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.8)" }}>
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+                </svg>
+                −1
+              </span>
             </>
           )}
         </button>
