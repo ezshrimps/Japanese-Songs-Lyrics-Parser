@@ -38,6 +38,7 @@ export default function LyricsDisplay({
             key={`${i}:${line.originalText}`}
             line={line}
             index={i}
+            totalLines={data.length}
             savedIds={savedIds}
             onSaveGrammar={onSaveGrammar}
             timestamp={tsMap.get(i)}

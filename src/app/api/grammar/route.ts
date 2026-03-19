@@ -1,7 +1,8 @@
 import { GoogleGenerativeAI, SchemaType, ObjectSchema } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 import { GrammarUnit } from "@/types";
-import { consumeCredit, remaining, DAILY_LIMIT } from "@/lib/credits";
+import { consumeCredit, remaining, DAILY_LIMIT, getSupabaseCredits, consumeSupabaseCredit } from "@/lib/credits";
+import { auth } from "@clerk/nextjs/server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
@@ -37,20 +38,42 @@ function getIp(req: NextRequest): string {
 }
 
 export async function POST(request: NextRequest) {
+  const { userId } = await auth();
   const ip = getIp(request);
 
-  if (remaining(ip) <= 0) {
-    return NextResponse.json(
-      { error: "今日免费额度已用完，明天再来吧 ✦" },
-      { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
-    );
-  }
-
   try {
-    const { line } = await request.json();
+    const { line, lineIndex, totalLines } = await request.json() as {
+      line: string;
+      lineIndex?: number;
+      totalLines?: number;
+    };
 
     if (!line || typeof line !== "string") {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    }
+
+    // ── 30% free rule ──────────────────────────────────────────────────────
+    const freeThreshold = totalLines ? Math.ceil(totalLines * 0.3) : 0;
+    const isFree = typeof lineIndex === "number" && lineIndex < freeThreshold;
+
+    // ── Credit check ───────────────────────────────────────────────────────
+    if (!isFree) {
+      if (userId) {
+        const balance = await getSupabaseCredits(userId);
+        if (balance <= 0) {
+          return NextResponse.json(
+            { error: "积分不足，请兑换激活码充值 ✦" },
+            { status: 429, headers: { "X-Credits-Remaining": "0" } }
+          );
+        }
+      } else {
+        if (remaining(ip) <= 0) {
+          return NextResponse.json(
+            { error: "今日免费额度已用完，注册登录可获得更多积分 ✦" },
+            { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
+          );
+        }
+      }
     }
 
     const model = genAI.getGenerativeModel({
@@ -78,21 +101,43 @@ partOfSpeech must be one of: 名词/动词/助词/形容词/副词/助动词/接
 
     if (units.length === 0) {
       console.warn("Grammar API: Gemini returned empty units for line:", line);
-      // Don't consume credit — empty result is a model failure, not a user action
       return NextResponse.json(
         { error: "解析返回空，不扣积分，请重试", retryFree: true },
-        { status: 503, headers: { "X-Credits-Remaining": String(remaining(ip)), "X-Credits-Limit": String(DAILY_LIMIT) } }
+        { status: 503 }
       );
     }
 
-    const left = consumeCredit(ip);
+    // ── Consume credit (only for non-free lines) ───────────────────────────
+    let creditsLeft: number | null = null;
+
+    if (!isFree) {
+      if (userId) {
+        try {
+          creditsLeft = await consumeSupabaseCredit(userId);
+        } catch {
+          return NextResponse.json({ error: "积分扣除失败，请重试" }, { status: 500 });
+        }
+      } else {
+        creditsLeft = consumeCredit(ip);
+      }
+    } else {
+      // Free line — report current balance without consuming
+      if (userId) {
+        creditsLeft = await getSupabaseCredits(userId);
+      } else {
+        creditsLeft = remaining(ip);
+      }
+    }
+
+    const headers: Record<string, string> = {};
+    if (creditsLeft !== null) {
+      headers["X-Credits-Remaining"] = String(creditsLeft);
+      if (!userId) headers["X-Credits-Limit"] = String(DAILY_LIMIT);
+    }
 
     return NextResponse.json(
-      {
-        units,
-        translation: parsed.translation ?? "",
-      },
-      { headers: { "X-Credits-Remaining": String(left), "X-Credits-Limit": String(DAILY_LIMIT) } }
+      { units, translation: parsed.translation ?? "" },
+      { headers }
     );
   } catch (error) {
     console.error("Grammar error:", error);

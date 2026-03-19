@@ -1,6 +1,10 @@
-# env
+# env — NEVER commit secrets
+.env
 .env.local
 .env*.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Next.js
 .next/
@@ -9,7 +13,19 @@ out/
 # dependencies
 node_modules/
 
+# build artifacts
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
 # misc
 .DS_Store
 *.pem
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# align debug log (dev only)
+align.log
+
+# Vercel
+.vercel

@@ -4,7 +4,8 @@ import { ParsedResult, Segment } from "@/types";
 import { toRomaji } from "wanakana";
 import path from "path";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { consumeCredit, remaining, DAILY_LIMIT } from "@/lib/credits";
+import { consumeCredit, remaining, DAILY_LIMIT, getSupabaseCredits, consumeSupabaseCredit } from "@/lib/credits";
+import { auth } from "@clerk/nextjs/server";
 
 // A typical J-pop song is 300–800 chars. 2000 gives generous headroom
 // while catching abuse (multiple songs concatenated, or padding to farm tokens).
@@ -127,6 +128,7 @@ function getIp(req: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
+  const { userId } = await auth();
 
   try {
     const body = await request.json();
@@ -145,15 +147,24 @@ export async function POST(request: NextRequest) {
       }
       const parsed  = uniqueLines.map((l) => tokenizeLine(tokenizer, l));
       const expanded = expandMap.map((i) => parsed[i]);
+      const creditsLeft = userId ? await getSupabaseCredits(userId) : remaining(ip);
       return NextResponse.json(expanded, {
-        headers: { "X-Credits-Remaining": String(remaining(ip)), "X-Credits-Limit": String(DAILY_LIMIT) },
+        headers: { "X-Credits-Remaining": String(creditsLeft), "X-Credits-Limit": String(DAILY_LIMIT) },
       });
     }
 
     // ── Path B: raw lyrics input — requires Gemini split (costs 1 credit) ─
-    if (remaining(ip) <= 0) {
+    if (userId) {
+      const balance = await getSupabaseCredits(userId);
+      if (balance <= 0) {
+        return NextResponse.json(
+          { error: "积分不足，请兑换激活码充值 ✦" },
+          { status: 429, headers: { "X-Credits-Remaining": "0" } }
+        );
+      }
+    } else if (remaining(ip) <= 0) {
       return NextResponse.json(
-        { error: "今日免费额度已用完，明天再来吧 ✦" },
+        { error: "今日免费额度已用完，注册登录可获得更多积分 ✦" },
         { status: 429, headers: { "X-Credits-Remaining": "0", "X-Credits-Limit": String(DAILY_LIMIT) } }
       );
     }
@@ -175,7 +186,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "未能识别到有效歌词，请检查输入内容" }, { status: 400 });
     }
 
-    const left = consumeCredit(ip);
+    let left: number;
+    if (userId) {
+      try {
+        left = await consumeSupabaseCredit(userId);
+      } catch {
+        return NextResponse.json({ error: "积分扣除失败，请重试" }, { status: 500 });
+      }
+    } else {
+      left = consumeCredit(ip);
+    }
 
     // Deduplicate
     const uniqueLines: string[] = [];

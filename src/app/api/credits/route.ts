@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { remaining, DAILY_LIMIT } from "@/lib/credits";
+import { auth } from "@clerk/nextjs/server";
+import { remaining, DAILY_LIMIT, getSupabaseCredits } from "@/lib/credits";
 
 function getIp(req: NextRequest): string {
   return (
@@ -10,7 +11,13 @@ function getIp(req: NextRequest): string {
 }
 
 export async function GET(request: NextRequest) {
-  const ip = getIp(request);
-  return NextResponse.json({ remaining: remaining(ip), limit: DAILY_LIMIT });
-}
+  const { userId } = await auth();
 
+  if (userId) {
+    const balance = await getSupabaseCredits(userId);
+    return NextResponse.json({ remaining: balance, limit: null, authenticated: true });
+  }
+
+  const ip = getIp(request);
+  return NextResponse.json({ remaining: remaining(ip), limit: DAILY_LIMIT, authenticated: false });
+}

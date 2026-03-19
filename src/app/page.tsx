@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useUser, UserButton, SignInButton } from "@clerk/nextjs";
 import LyricsDisplay from "@/components/LyricsDisplay";
 import SavedLyricsSidebar from "@/components/SavedLyricsSidebar";
 import LrcSearchPanel from "@/components/LrcSearchPanel";
+import RedeemModal from "@/components/RedeemModal";
 import { useSavedLyrics } from "@/hooks/useSavedLyrics";
 import { useSavedGrammar } from "@/hooks/useSavedGrammar";
 import { ParsedResult, LineTimestamp } from "@/types";
@@ -126,6 +128,8 @@ export default function Home() {
   const [inputModalOpen, setInputModalOpen] = useState(false);
   const [inputTab, setInputTab]             = useState<"paste" | "search">("paste");
   const [showWelcome, setShowWelcome]       = useState(false);
+  const [redeemOpen, setRedeemOpen]         = useState(false);
+  const { isSignedIn } = useUser();
 
   const setActiveLine = (idx: number | null) => {
     activeLineRef.current = idx;
@@ -189,7 +193,7 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/credits").then(r => r.json()).then(d => setCredits(d.remaining ?? null)).catch(() => {});
     if (!localStorage.getItem("jlp_welcomed")) setShowWelcome(true);
-  }, []);
+  }, [isSignedIn]);
 
   const { savedGrammar, savedIds, save: saveGrammar, remove: removeGrammar } = useSavedGrammar();
 
@@ -580,23 +584,75 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Credits indicator */}
-        {credits !== null && (
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
-            style={{
-              background: credits <= 3 ? "rgba(232,99,74,0.1)" : "rgba(238,193,112,0.08)",
-              border: `1px solid ${credits <= 3 ? "rgba(232,99,74,0.25)" : "rgba(238,193,112,0.2)"}`,
-              color: credits <= 3 ? "#E8634A" : "#EEC170",
-            }}
-            title="每日免费AI语法解析积分（每行消耗1积分）"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
-            </svg>
-            {credits} / 20
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Credits indicator */}
+          {credits !== null && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{
+                background: credits <= 3 ? "rgba(232,99,74,0.1)" : "rgba(238,193,112,0.08)",
+                border: `1px solid ${credits <= 3 ? "rgba(232,99,74,0.25)" : "rgba(238,193,112,0.2)"}`,
+                color: credits <= 3 ? "#E8634A" : "#EEC170",
+              }}
+              title={isSignedIn ? "账户积分余额（每行AI解析消耗1积分）" : "每日免费AI语法解析次数"}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
+              </svg>
+              {isSignedIn ? credits : `${credits} / 5`}
+            </div>
+          )}
+
+          {/* Redeem button (logged in only) */}
+          {isSignedIn && (
+            <button
+              onClick={() => setRedeemOpen(true)}
+              className="text-xs px-2.5 py-1 rounded-lg transition-all duration-150"
+              style={{ background: "transparent", border: "1px solid #2e2e2e", color: "#555" }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.borderColor = "#444";
+                (e.currentTarget as HTMLElement).style.color = "#aaa";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.borderColor = "#2e2e2e";
+                (e.currentTarget as HTMLElement).style.color = "#555";
+              }}
+              title="兑换激活码"
+            >
+              兑换
+            </button>
+          )}
+
+          {/* Auth: show UserButton when signed in, SignInButton when not */}
+          {isSignedIn ? (
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: { width: 28, height: 28 },
+                },
+              }}
+            />
+          ) : (
+            <SignInButton mode="modal">
+              <button
+                className="text-xs px-3 py-1 rounded-lg transition-all duration-150"
+                style={{
+                  background: "rgba(232,99,74,0.1)",
+                  border: "1px solid rgba(232,99,74,0.35)",
+                  color: "#E8634A",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(232,99,74,0.18)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "rgba(232,99,74,0.1)";
+                }}
+              >
+                登录 / 注册
+              </button>
+            </SignInButton>
+          )}
+        </div>
       </header>
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
@@ -915,6 +971,17 @@ export default function Home() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* ── Redeem Modal ──────────────────────────────────────────────────── */}
+      {redeemOpen && (
+        <RedeemModal
+          onClose={() => setRedeemOpen(false)}
+          onSuccess={(newBalance) => {
+            setCredits(newBalance);
+            setRedeemOpen(false);
+          }}
+        />
       )}
 
       {/* ── Input Modal ───────────────────────────────────────────────────── */}

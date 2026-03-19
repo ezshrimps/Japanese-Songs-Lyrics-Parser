@@ -83,6 +83,7 @@ function SegmentNode({
 interface Props {
   line: ParsedResult;
   index?: number;
+  totalLines?: number;
   savedIds: Set<string>;
   onSaveGrammar: (unit: GrammarUnit, sourceLine: string) => void;
   timestamp?: { startTime: number; endTime: number };
@@ -98,7 +99,7 @@ const fmt = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 export default function LyricLineCard({
-  line, index = 0, savedIds, onSaveGrammar,
+  line, index = 0, totalLines, savedIds, onSaveGrammar,
   timestamp, isActive = false, isLinePlaying = false, onPlay,
   creditsRemaining, onCreditsChange, onGrammarLoaded,
 }: Props) {
@@ -122,7 +123,7 @@ export default function LyricLineCard({
       const res = await fetch("/api/grammar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line: line.originalText }),
+        body: JSON.stringify({ line: line.originalText, lineIndex: index, totalLines }),
       });
       const data = await res.json();
       if (res.status === 429) {
